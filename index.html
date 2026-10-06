@@ -38,11 +38,19 @@
       </div>
 
       <div class="a11y-tools-row">
-        <!-- Sintetizador de Áudio e Leitura em Voz Alta -->
+        <!-- Sintetizador de Áudio e Leitura em Voz Alta (ATIVO POR PADRÃO) -->
         <div class="a11y-item">
-          <button id="btn-toggle-speech" class="a11y-btn" aria-pressed="false" title="Ativar leitor e narrador de voz do site (Alt + V)">
+          <button id="btn-toggle-speech" class="a11y-btn active" aria-pressed="true" title="Ativar ou desativar narrador de voz do site (Alt + V)">
             <span class="btn-icon" aria-hidden="true">🔊</span>
-            <span class="btn-text">Narrador de Voz</span>
+            <span class="btn-text">Narrador de Voz: LIGADO</span>
+          </button>
+        </div>
+
+        <!-- Leitura Completa da Página -->
+        <div class="a11y-item">
+          <button id="btn-read-full-page" class="a11y-btn" title="Ouvir toda a página do início ao fim sequencialmente (Alt + L)">
+            <span class="btn-icon" aria-hidden="true">📖</span>
+            <span class="btn-text">Ler Página Toda</span>
           </button>
         </div>
 
@@ -124,7 +132,7 @@
   </div>
 
   <!-- CABEÇALHO PRINCIPAL DO SITE -->
-  <header class="site-header" role="banner">
+  <header class="site-header" role="banner" id="site-header">
     <div class="container header-container">
       <div class="brand-wrapper">
         <a href="#hero" class="brand-link" aria-label="Ponto Digital - Página Inicial">
@@ -165,7 +173,7 @@
     <!-- SEÇÃO HERO / APRESENTAÇÃO -->
     <section id="hero" class="hero-section" aria-labelledby="hero-heading">
       <div class="container hero-grid">
-        <div class="hero-content">
+        <div class="hero-content" id="hero-content">
           <div class="hero-pill">
             <span class="pill-dot" aria-hidden="true"></span>
             <span>Desenvolvimento de Software B2B & Inclusão Total</span>
@@ -212,7 +220,7 @@
           <div class="visual-card">
             <div class="visual-card-header">
               <span class="status-indicator" aria-hidden="true"></span>
-              <span class="card-caption" id="hero-visual-caption">Simulação de Painel Digital Acessível</span>
+              <span class="card-caption" id="hero-visual-caption">Painel Digital Acessível Ponto Digital</span>
               <span class="card-pill">Status: Online</span>
             </div>
             
@@ -235,7 +243,7 @@
               </div>
             </div>
 
-            <div class="visual-interactive-box">
+            <div class="visual-interactive-box" id="box-audiodesc">
               <p class="visual-box-title"><strong>🔊 Teste Rápido de Áudio-Descrição:</strong></p>
               <p class="visual-box-text" id="sample-audiodesc">
                 "Você está explorando o portal oficial da Ponto Digital. Todas as ações do mouse possuem equivalência imediata no teclado e narração clara."
@@ -258,34 +266,43 @@
           <p class="section-desc">
             Nascida no curso de Desenvolvimento de Sistemas, a Ponto Digital conecta negócios ao futuro através da automação inteligente de processos corporativos.
           </p>
-          <button class="btn btn-audio-small speech-reader-btn" data-target="sobre" aria-label="Ouvir seção Sobre a Empresa">
-            <span aria-hidden="true">🎧</span> Ler esta seção
+          <button class="btn btn-audio-small speech-reader-btn" data-target="sobre" aria-label="Ouvir toda a seção Sobre a Empresa">
+            <span aria-hidden="true">🎧</span> Ouvir esta seção completa
           </button>
         </div>
 
         <div class="info-grid-3">
-          <article class="info-card" tabindex="0">
+          <article class="info-card" tabindex="0" id="card-atuacao">
             <div class="info-card-icon" aria-hidden="true">🏢</div>
             <h3 class="info-card-title">Área de Atuação</h3>
             <p class="info-card-text">
               Desenvolvimento de softwares <strong>B2B (Business-to-Business)</strong>. Atendemos micro, pequenas e médias empresas que buscam modernizar sua gestão, contratos e controle operacional sem burocracia.
             </p>
+            <button class="btn btn-audio-small speech-reader-btn" data-target="card-atuacao" aria-label="Ouvir detalhes da área de atuação">
+              <span aria-hidden="true">🔊</span> Ouvir
+            </button>
           </article>
 
-          <article class="info-card" tabindex="0">
+          <article class="info-card" tabindex="0" id="card-sede">
             <div class="info-card-icon" aria-hidden="true">📍</div>
             <h3 class="info-card-title">Sede e Atendimento</h3>
             <p class="info-card-text">
               Sediada no Brasil com atuação digital global. Escritório corporativo localizado na <strong>Rua das Palmeiras, nº 1250, Sala 304, Chácara Santo Antônio, São Paulo/SP</strong> (CEP: 04719-999).
             </p>
+            <button class="btn btn-audio-small speech-reader-btn" data-target="card-sede" aria-label="Ouvir endereço da sede">
+              <span aria-hidden="true">🔊</span> Ouvir
+            </button>
           </article>
 
-          <article class="info-card" tabindex="0">
+          <article class="info-card" tabindex="0" id="card-missao">
             <div class="info-card-icon" aria-hidden="true">🎯</div>
             <h3 class="info-card-title">Missão & Acessibilidade</h3>
             <p class="info-card-text">
               Desenvolver tecnologia que não deixe ninguém para trás. Nossas interfaces priorizam a experiência de usuários com <strong>deficiência visual ou baixa visão (CID H54)</strong> em conformidade com as diretrizes internacionais.
             </p>
+            <button class="btn btn-audio-small speech-reader-btn" data-target="card-missao" aria-label="Ouvir compromisso de missão e acessibilidade">
+              <span aria-hidden="true">🔊</span> Ouvir
+            </button>
           </article>
         </div>
       </div>
@@ -300,6 +317,9 @@
           <p class="section-desc">
             Sistemas desenvolvidos para otimizar tempo, cortar custos operacionais e acelerar a tomada de decisão em empresas de todos os portes.
           </p>
+          <button class="btn btn-audio-small speech-reader-btn" data-target="produtos-b2b" aria-label="Ouvir catálogo completo de produtos B2B">
+            <span aria-hidden="true">🎧</span> Ouvir esta seção completa
+          </button>
         </div>
 
         <div class="products-grid">
@@ -444,6 +464,9 @@
           <p class="section-desc">
             Espaço interativo desenvolvido especialmente para os visitantes da nossa feira! Experimente como uma pessoa cega ou com baixa visão (CID H54) navega na web e teste seus conhecimentos com nosso quiz inclusivo.
           </p>
+          <button class="btn btn-audio-small speech-reader-btn" data-target="dinamicas-acessibilidade" aria-label="Ouvir introdução das dinâmicas da feira">
+            <span aria-hidden="true">🎧</span> Ouvir esta seção completa
+          </button>
         </div>
 
         <div class="fair-activities-tabs" role="tablist" aria-label="Atividades da Feira de Apresentação">
@@ -460,7 +483,7 @@
 
         <!-- PAINEL 1: SIMULADOR DE BAIXA VISÃO E AUDIÇÃO DE LEITOR -->
         <div id="panel-simulador" role="tabpanel" aria-labelledby="tab-simulador" class="tab-panel active">
-          <div class="simulator-card">
+          <div class="simulator-card" id="card-simulador">
             <div class="simulator-instructions">
               <h3 class="simulator-title">Simulação Empática: Como pessoas com Baixa Visão percebem a tela?</h3>
               <p>
@@ -527,7 +550,7 @@
 
         <!-- PAINEL 3: Bipes e Earcons de Navegação Espacial -->
         <div id="panel-audio-synth" role="tabpanel" aria-labelledby="tab-audio-synth" class="tab-panel hidden">
-          <div class="earcon-card">
+          <div class="earcon-card" id="card-earcons">
             <h3 class="earcon-title">🎵 Sons de Navegação Espacial (Earcons Web Audio)</h3>
             <p class="earcon-desc">
               Pessoas cegas utilizam sinais sonoros sutis (earcons) para saber quando mudaram de campo, quando um botão foi acionado, ou quando um alerta foi disparado. Nossos sintetizadores usam a <strong>Web Audio API nativa</strong> sem pesar no carregamento da página:
@@ -576,6 +599,9 @@
           <p class="section-desc">
             Conforme definido em nosso planejamento (modelo MVP funcional), teste abaixo o módulo financeiro simplificado com feedback sonoro imediato e relatório em áudio.
           </p>
+          <button class="btn btn-audio-small speech-reader-btn" data-target="mvp-interativo" aria-label="Ouvir apresentação do simulador ERP">
+            <span aria-hidden="true">🎧</span> Ouvir esta seção completa
+          </button>
         </div>
 
         <div class="mvp-board">
@@ -665,13 +691,13 @@
             Conheça os profissionais por trás da concepção, desenvolvimento tecnológico, marketing e governança da Ponto Digital.
           </p>
           <button class="btn btn-audio-small speech-reader-btn" data-target="equipe-grid" aria-label="Ouvir a lista completa de membros da equipe">
-            <span aria-hidden="true">🎧</span> Ouvir lista da equipe
+            <span aria-hidden="true">🎧</span> Ouvir lista da equipe completa
           </button>
         </div>
 
         <div class="team-grid" id="equipe-grid">
           <!-- Diego Alves -->
-          <article class="team-card" tabindex="0">
+          <article class="team-card" tabindex="0" id="card-diego">
             <div class="team-avatar-wrap" aria-hidden="true">
               <span class="team-avatar-initials">DA</span>
             </div>
@@ -680,10 +706,13 @@
             <p class="team-bio">
               Visão estratégica de negócios, planejamento financeiro e direcionamento geral das metas corporativas da Ponto Digital.
             </p>
+            <button class="btn btn-audio-small speech-reader-btn" data-target="card-diego" aria-label="Ouvir sobre Diego Alves">
+              <span aria-hidden="true">🔊</span> Ouvir
+            </button>
           </article>
 
           <!-- Victor Monteiro -->
-          <article class="team-card featured-member" tabindex="0">
+          <article class="team-card featured-member" tabindex="0" id="card-victor">
             <div class="team-avatar-wrap" aria-hidden="true">
               <span class="team-avatar-initials">VM</span>
             </div>
@@ -692,10 +721,13 @@
             <p class="team-bio">
               Arquitetura dos sistemas de software, engenharia de acessibilidade web (WCAG AAA), integração de áudio e supervisão do código-fonte.
             </p>
+            <button class="btn btn-audio-small speech-reader-btn" data-target="card-victor" aria-label="Ouvir sobre Victor Monteiro">
+              <span aria-hidden="true">🔊</span> Ouvir
+            </button>
           </article>
 
           <!-- Jonathan Vrena -->
-          <article class="team-card" tabindex="0">
+          <article class="team-card" tabindex="0" id="card-jonathan">
             <div class="team-avatar-wrap" aria-hidden="true">
               <span class="team-avatar-initials">JV</span>
             </div>
@@ -704,10 +736,13 @@
             <p class="team-bio">
               Gestão de prazos e sprints, alinhamento dos requisitos do projeto e coordenação ágil das entregas da equipe.
             </p>
+            <button class="btn btn-audio-small speech-reader-btn" data-target="card-jonathan" aria-label="Ouvir sobre Jonathan Vrena">
+              <span aria-hidden="true">🔊</span> Ouvir
+            </button>
           </article>
 
           <!-- Matheus Morais -->
-          <article class="team-card" tabindex="0">
+          <article class="team-card" tabindex="0" id="card-matheus">
             <div class="team-avatar-wrap" aria-hidden="true">
               <span class="team-avatar-initials">MM</span>
             </div>
@@ -716,10 +751,13 @@
             <p class="team-bio">
               Desenvolvimento de interfaces intuitivas, criação de campanhas de divulgação e estratégia de posicionamento da marca.
             </p>
+            <button class="btn btn-audio-small speech-reader-btn" data-target="card-matheus" aria-label="Ouvir sobre Matheus Morais">
+              <span aria-hidden="true">🔊</span> Ouvir
+            </button>
           </article>
 
           <!-- Gabriel Oliveira -->
-          <article class="team-card" tabindex="0">
+          <article class="team-card" tabindex="0" id="card-gabriel">
             <div class="team-avatar-wrap" aria-hidden="true">
               <span class="team-avatar-initials">GO</span>
             </div>
@@ -728,10 +766,13 @@
             <p class="team-bio">
               Prospecção de clientes B2B, análise de mercado, vendas consultivas e relacionamento institucional com parceiros.
             </p>
+            <button class="btn btn-audio-small speech-reader-btn" data-target="card-gabriel" aria-label="Ouvir sobre Gabriel Oliveira">
+              <span aria-hidden="true">🔊</span> Ouvir
+            </button>
           </article>
 
           <!-- Yamil Josué -->
-          <article class="team-card" tabindex="0">
+          <article class="team-card" tabindex="0" id="card-yamil">
             <div class="team-avatar-wrap" aria-hidden="true">
               <span class="team-avatar-initials">YJ</span>
             </div>
@@ -740,10 +781,13 @@
             <p class="team-bio">
               Apoio direto na codificação, implementação de componentes de tela, testes de usabilidade e revisão de consistência.
             </p>
+            <button class="btn btn-audio-small speech-reader-btn" data-target="card-yamil" aria-label="Ouvir sobre Yamil Josué">
+              <span aria-hidden="true">🔊</span> Ouvir
+            </button>
           </article>
 
           <!-- Vinicius Ferreira -->
-          <article class="team-card" tabindex="0">
+          <article class="team-card" tabindex="0" id="card-vinicius">
             <div class="team-avatar-wrap" aria-hidden="true">
               <span class="team-avatar-initials">VF</span>
             </div>
@@ -752,6 +796,9 @@
             <p class="team-bio">
               Suporte às rotinas de gerência, acompanhamento operacional de vendas e atendimento de primeiro nível a clientes.
             </p>
+            <button class="btn btn-audio-small speech-reader-btn" data-target="card-vinicius" aria-label="Ouvir sobre Vinicius Ferreira">
+              <span aria-hidden="true">🔊</span> Ouvir
+            </button>
           </article>
         </div>
       </div>
@@ -760,12 +807,16 @@
     <!-- SEÇÃO FORMULÁRIO DE CONTATO ACESSÍVEL & LOCALIZAÇÃO -->
     <section id="contato" class="section-padding bg-subtle" aria-labelledby="contato-heading">
       <div class="container contact-grid">
-        <div class="contact-info-col">
+        <div class="contact-info-col" id="contact-details-box">
           <span class="section-subtitle">Fale com Especialistas</span>
           <h2 id="contato-heading" class="section-title">Pronto para digitalizar seu negócio com total acessibilidade?</h2>
           <p class="section-desc">
             Envie sua mensagem ou agende uma reunião presencial em nossa sede. Nosso time responderá em até 24 horas úteis.
           </p>
+
+          <button class="btn btn-audio-small speech-reader-btn" data-target="contact-details-box" aria-label="Ouvir endereço e detalhes de contato">
+            <span aria-hidden="true">🎧</span> Ouvir Endereço e Contatos
+          </button>
 
           <div class="contact-card-details">
             <div class="detail-item">
@@ -795,7 +846,7 @@
         </div>
 
         <div class="contact-form-col">
-          <div class="contact-card">
+          <div class="contact-card" id="card-contact-form">
             <h3 class="form-title">Envie uma Mensagem Acessível</h3>
             <p class="form-instructions">
               Todos os campos marcados com um asterisco (<span aria-hidden="true">*</span><span class="sr-only">obrigatório</span>) são necessários.
@@ -850,9 +901,9 @@
   </main>
 
   <!-- RODAPÉ COMPLETO E ACESSÍVEL -->
-  <footer class="site-footer" role="contentinfo">
+  <footer class="site-footer" role="contentinfo" id="site-footer">
     <div class="container footer-grid">
-      <div class="footer-col footer-brand-col">
+      <div class="footer-col footer-brand-col" id="footer-summary">
         <div class="footer-logo">
           <span class="logo-circle" aria-hidden="true"></span>
           <span class="footer-brand-name">Ponto Digital</span>
@@ -861,6 +912,9 @@
         <p class="footer-desc">
           Empresa brasileira de desenvolvimento de softwares B2B focada em sustentabilidade (ODS 12) e inclusão digital irrestrita para pessoas com deficiência visual (CID H54).
         </p>
+        <button class="btn btn-audio-small speech-reader-btn" data-target="footer-summary" aria-label="Ouvir informações do rodapé">
+          <span aria-hidden="true">🔊</span> Ouvir Rodapé
+        </button>
       </div>
 
       <div class="footer-col">
@@ -943,6 +997,10 @@
             <tr>
               <td><kbd>Alt</kbd> + <kbd>5</kbd></td>
               <td>Ir para o formulário de contato</td>
+            </tr>
+            <tr>
+              <td><kbd>Alt</kbd> + <kbd>L</kbd></td>
+              <td>Ler toda a página sequencialmente do início ao fim</td>
             </tr>
             <tr>
               <td><kbd>Alt</kbd> + <kbd>V</kbd></td>

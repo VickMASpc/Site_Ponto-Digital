@@ -1975,3 +1975,31 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* --------------------------------------------------------------------------
+   20. DESTAQUE VISUAL DURANTE LEITURA DO NARRADOR
+   -------------------------------------------------------------------------- */
+.reading-active {
+  outline: 3px solid var(--color-brand) !important;
+  outline-offset: 4px !important;
+  background-color: var(--color-brand-light) !important;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+}
+
+[data-theme="high-contrast-yellow"] .reading-active {
+  outline: 4px solid #ffff00 !important;
+  background-color: rgba(255, 255, 0, 0.25) !important;
+  color: #ffffff !important;
+}
+
+[data-theme="high-contrast-white"] .reading-active {
+  outline: 4px solid #ffffff !important;
+  background-color: rgba(255, 255, 255, 0.25) !important;
+}
+
+[data-theme="high-contrast-invert"] .reading-active {
+  outline: 4px solid #000000 !important;
+  background-color: rgba(0, 0, 0, 0.15) !important;
+}
+

@@ -1,8 +1,11 @@
 /**
  * PONTO DIGITAL - MÓDULO DE ACESSIBILIDADE TOTAL (WCAG AAA & CID H54)
  * Recursos para Pessoas Cegas e com Baixa Visão:
- * - Sintetizador de Fala (Web Speech API) com voz em Português (pt-BR)
- * - Earcons e Bipes Sonoros Espaciais (Web Audio API nativa)
+ * - Narrador por Voz (Web Speech API) ATIVO POR PADRÃO com divisão inteligente de sentenças
+ * - Início automático com boas-vindas faladas e suporte a políticas de autoplay do navegador
+ * - Leitura de TODAS as seções, cards, parágrafos, botões e títulos
+ * - Modo "Ler Página Toda" sequencial
+ * - Bipes Sonoros Espaciais (Web Audio API nativa)
  * - Regiões Vivas (ARIA Live Regions) para Leitores de Tela
  * - Navegação Completa por Teclado e Atalhos Globais
  * - Modos de Alto Contraste (Amarelo/Preto, Branco/Preto, Invertido)
@@ -16,17 +19,24 @@
   // 1. ESTADO GLOBAL DE ACESSIBILIDADE
   // =========================================================================
   const a11yState = {
-    speechEnabled: false,
+    speechEnabled: true, // INICIA NARRADOR ATIVO POR PADRÃO
     soundEffectsEnabled: true,
     speechRate: 1.0,
     currentUtterance: null,
     isSpeaking: false,
-    fontSizeLevel: 0, // -1: pequeno, 0: normal, 1: médio, 2: grande, 3: extra-grande
+    fontSizeLevel: 0,
     fontSizeClasses: ['normal', 'medium', 'large', 'extra-large'],
     activeTheme: 'default',
     rulerActive: false,
     hyperlegibleActive: false,
-    audioCtx: null
+    audioCtx: null,
+    speechQueue: [],
+    currentQueueIndex: 0,
+    hasWelcomed: false,
+    currentHighlightedEl: null,
+    heartbeatTimer: null,
+    isReadingFullPage: false,
+    fullPageSectionIndex: 0
   };
 
   // =========================================================================
@@ -36,6 +46,7 @@
   const assertiveAnnouncer = document.getElementById('sr-announcements-assertive');
   const themeSelect = document.getElementById('theme-select');
   const btnToggleSpeech = document.getElementById('btn-toggle-speech');
+  const btnReadFullPage = document.getElementById('btn-read-full-page');
   const btnToggleSound = document.getElementById('btn-toggle-sound-effects');
   const btnFontInc = document.getElementById('btn-font-inc');
   const btnFontDec = document.getElementById('btn-font-dec');
@@ -100,19 +111,17 @@
       const now = ctx.currentTime;
 
       if (type === 'focus') {
-        // Bipe sutil e suave de 440Hz
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = 'sine';
         osc.frequency.setValueAtTime(440, now);
-        gain.gain.setValueAtTime(0.04, now);
+        gain.gain.setValueAtTime(0.035, now);
         gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.08);
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.start(now);
         osc.stop(now + 0.08);
       } else if (type === 'toggle') {
-        // Tom ascendente de confirmação
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = 'triangle';
@@ -125,7 +134,6 @@
         osc.start(now);
         osc.stop(now + 0.12);
       } else if (type === 'success') {
-        // Acorde harmônico maior de celebração (C5 - E5 - G5)
         [523.25, 659.25, 783.99].forEach((freq, idx) => {
           const osc = ctx.createOscillator();
           const gain = ctx.createGain();
@@ -139,7 +147,6 @@
           osc.stop(now + idx * 0.06 + 0.35);
         });
       } else if (type === 'alert' || type === 'error') {
-        // Tom de atenção com duas repetições breves
         [220, 185].forEach((freq, idx) => {
           const osc = ctx.createOscillator();
           const gain = ctx.createGain();
@@ -159,91 +166,181 @@
   }
 
   // =========================================================================
-  // 5. NARRADOR POR VOZ (WEB SPEECH API)
+  // 5. MOTOR DE FALA INTELIGENTE (CHUNKING & RESOLUÇÃO DE TRUNCAMENTO)
   // =========================================================================
   function getPortugueseVoice() {
     if (!('speechSynthesis' in window)) return null;
     const voices = window.speechSynthesis.getVoices();
-    // Prioriza vozes em pt-BR (Google português, Luciana, Felipe, etc)
     const ptBrVoice = voices.find(v => v.lang.toLowerCase() === 'pt-br' || v.lang.toLowerCase() === 'pt_br');
     if (ptBrVoice) return ptBrVoice;
     return voices.find(v => v.lang.toLowerCase().startsWith('pt')) || null;
   }
 
-  // Carrega vozes no evento do navegador caso assíncrono
   if ('speechSynthesis' in window) {
     window.speechSynthesis.onvoiceschanged = () => {
       getPortugueseVoice();
     };
   }
 
-  function speakText(text, onStart, onEnd) {
+  // Divide textos longos em frases completas para não truncar no navegador
+  function splitIntoSentences(text) {
+    if (!text) return [];
+    const normalized = text.replace(/\s+/g, ' ').trim();
+    // Separa por pontos, pontos e vírgula, exclamações, interrogações ou quebras
+    const rawMatches = normalized.match(/[^.!?\n;:]+[.!?\n;:]*|[^.!?\n;:]+$/g) || [normalized];
+    const sentences = [];
+
+    rawMatches.forEach(item => {
+      const clean = item.trim();
+      if (!clean) return;
+      if (clean.length > 150) {
+        // Se ainda for muito grande, quebra por vírgulas
+        const commaSplits = clean.split(/,/);
+        commaSplits.forEach(cs => {
+          const cTrim = cs.trim();
+          if (cTrim) sentences.push(cTrim);
+        });
+      } else {
+        sentences.push(clean);
+      }
+    });
+
+    return sentences.length > 0 ? sentences : [normalized];
+  }
+
+  function highlightElement(el) {
+    clearHighlight();
+    if (el && el.nodeType === 1) {
+      el.classList.add('reading-active');
+      a11yState.currentHighlightedEl = el;
+      try {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } catch (e) {}
+    }
+  }
+
+  function clearHighlight() {
+    if (a11yState.currentHighlightedEl) {
+      a11yState.currentHighlightedEl.classList.remove('reading-active');
+      a11yState.currentHighlightedEl = null;
+    }
+  }
+
+  function startSpeechHeartbeat() {
+    stopSpeechHeartbeat();
+    // Impede o Chrome de adormecer ou cortar fala após 14 segundos
+    a11yState.heartbeatTimer = setInterval(() => {
+      if ('speechSynthesis' in window && window.speechSynthesis.speaking) {
+        window.speechSynthesis.pause();
+        window.speechSynthesis.resume();
+      }
+    }, 10000);
+  }
+
+  function stopSpeechHeartbeat() {
+    if (a11yState.heartbeatTimer) {
+      clearInterval(a11yState.heartbeatTimer);
+      a11yState.heartbeatTimer = null;
+    }
+  }
+
+  function speakText(text, targetElement = null, onComplete = null) {
     if (!('speechSynthesis' in window)) {
-      announceToScreenReader('Síntese de voz não suportada neste navegador.');
+      announceToScreenReader('Síntese de voz não suportada no seu navegador.');
       return;
     }
 
-    window.speechSynthesis.cancel(); // Cancela falas anteriores
+    stopSpeech(false); // Para fala atual sem desligar o modo
+
     if (!text || text.trim() === '') return;
 
-    // Remove caracteres especiais ou quebras redundantes
-    const cleanText = text.replace(/\s+/g, ' ').trim();
-
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.lang = 'pt-BR';
-    utterance.rate = a11yState.speechRate;
-    
-    const ptVoice = getPortugueseVoice();
-    if (ptVoice) {
-      utterance.voice = ptVoice;
+    if (targetElement) {
+      highlightElement(targetElement);
     }
 
-    utterance.onstart = () => {
-      a11yState.isSpeaking = true;
-      if (playerContainer) {
-        playerContainer.classList.remove('hidden');
-        if (playerText) {
-          playerText.textContent = cleanText.substring(0, 45) + '...';
-        }
+    const sentences = splitIntoSentences(text);
+    a11yState.speechQueue = sentences;
+    a11yState.currentQueueIndex = 0;
+    a11yState.isSpeaking = true;
+
+    if (playerContainer) {
+      playerContainer.classList.remove('hidden');
+      if (playerText) {
+        playerText.textContent = sentences[0].substring(0, 45) + '...';
       }
-      if (onStart) onStart();
+    }
+
+    startSpeechHeartbeat();
+    playNextSentenceInQueue(onComplete);
+  }
+
+  function playNextSentenceInQueue(onComplete) {
+    if (!a11yState.speechEnabled) {
+      stopSpeech();
+      return;
+    }
+
+    if (a11yState.currentQueueIndex >= a11yState.speechQueue.length) {
+      a11yState.isSpeaking = false;
+      stopSpeechHeartbeat();
+      clearHighlight();
+      if (playerContainer) playerContainer.classList.add('hidden');
+      if (onComplete) onComplete();
+      return;
+    }
+
+    const sentence = a11yState.speechQueue[a11yState.currentQueueIndex];
+    const utterance = new SpeechSynthesisUtterance(sentence);
+    utterance.lang = 'pt-BR';
+    utterance.rate = a11yState.speechRate;
+
+    const voice = getPortugueseVoice();
+    if (voice) utterance.voice = voice;
+
+    utterance.onstart = () => {
+      if (playerText) {
+        playerText.textContent = sentence.substring(0, 45) + '...';
+      }
     };
 
     utterance.onend = () => {
-      a11yState.isSpeaking = false;
-      if (playerContainer) {
-        playerContainer.classList.add('hidden');
-      }
-      if (onEnd) onEnd();
+      a11yState.currentQueueIndex++;
+      playNextSentenceInQueue(onComplete);
     };
 
     utterance.onerror = (e) => {
-      console.warn('Erro na síntese de voz:', e);
-      a11yState.isSpeaking = false;
-      if (playerContainer) playerContainer.classList.add('hidden');
+      console.warn('Erro ao reproduzir frase:', e);
+      a11yState.currentQueueIndex++;
+      playNextSentenceInQueue(onComplete);
     };
 
     a11yState.currentUtterance = utterance;
     window.speechSynthesis.speak(utterance);
   }
 
-  function stopSpeech() {
+  function stopSpeech(resetQueue = true) {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
-      a11yState.isSpeaking = false;
-      if (playerContainer) playerContainer.classList.add('hidden');
     }
+    stopSpeechHeartbeat();
+    clearHighlight();
+    a11yState.isSpeaking = false;
+    if (resetQueue) {
+      a11yState.speechQueue = [];
+      a11yState.currentQueueIndex = 0;
+      a11yState.isReadingFullPage = false;
+    }
+    if (playerContainer) playerContainer.classList.add('hidden');
   }
 
   function toggleSpeechNarrator() {
     a11yState.speechEnabled = !a11yState.speechEnabled;
-    btnToggleSpeech.setAttribute('aria-pressed', a11yState.speechEnabled ? 'true' : 'false');
-    btnToggleSpeech.classList.toggle('active', a11yState.speechEnabled);
+    updateSpeechButtonUI();
 
     if (a11yState.speechEnabled) {
       playEarcon('toggle');
-      announceToScreenReader('Narrador de voz ativado. Ao clicar ou focar em elementos, o texto será lido.');
-      speakText('Narrador de voz da Ponto Digital ativado. Bem-vindo ao nosso site.');
+      announceToScreenReader('Narrador de voz ativado. Todas as seções e botões serão lidos.');
+      speakText('Narrador de voz ativado. Use Tab para navegar ou clique em qualquer seção para ouvi-la.');
     } else {
       stopSpeech();
       playEarcon('toggle');
@@ -251,8 +348,112 @@
     }
   }
 
+  function updateSpeechButtonUI() {
+    if (btnToggleSpeech) {
+      btnToggleSpeech.setAttribute('aria-pressed', a11yState.speechEnabled ? 'true' : 'false');
+      btnToggleSpeech.classList.toggle('active', a11yState.speechEnabled);
+    }
+  }
+
   // =========================================================================
-  // 6. CONTROLE DE TAMANHO DE FONTE (BAIXA VISÃO / CID H54)
+  // 6. LEITURA COMPLETA DA PÁGINA (SEQUENCIAL)
+  // =========================================================================
+  const pageSectionsToRead = [
+    { id: 'hero', name: 'Início e Apresentação da Ponto Digital' },
+    { id: 'sobre', name: 'Sobre a Empresa e Missão de Acessibilidade' },
+    { id: 'produtos-b2b', name: 'Catálogo de Softwares Corporativos B2B' },
+    { id: 'ods-sustentabilidade', name: 'Compromisso com o Meio Ambiente e ODS 12' },
+    { id: 'dinamicas-acessibilidade', name: 'Dinâmicas e Jogos da Feira' },
+    { id: 'mvp-interativo', name: 'Demonstração Prática do ERP' },
+    { id: 'equipe', name: 'Equipe de Desenvolvimento e Liderança' },
+    { id: 'contato', name: 'Informações de Contato e Localização' }
+  ];
+
+  function startFullPageReading() {
+    a11yState.speechEnabled = true;
+    updateSpeechButtonUI();
+    a11yState.isReadingFullPage = true;
+    a11yState.fullPageSectionIndex = 0;
+
+    announceToScreenReader('Iniciando leitura completa da página, seção por seção.', true);
+    readNextPageSection();
+  }
+
+  function readNextPageSection() {
+    if (!a11yState.isReadingFullPage || a11yState.fullPageSectionIndex >= pageSectionsToRead.length) {
+      a11yState.isReadingFullPage = false;
+      speakText('Leitura completa da página concluída. Ponto Digital: Conectando você ao Futuro!');
+      return;
+    }
+
+    const secInfo = pageSectionsToRead[a11yState.fullPageSectionIndex];
+    const secEl = document.getElementById(secInfo.id);
+
+    if (secEl) {
+      const sectionText = `Seção ${a11yState.fullPageSectionIndex + 1}: ${secInfo.name}. ` + extractCleanText(secEl);
+      speakText(sectionText, secEl, () => {
+        a11yState.fullPageSectionIndex++;
+        setTimeout(readNextPageSection, 800);
+      });
+    } else {
+      a11yState.fullPageSectionIndex++;
+      readNextPageSection();
+    }
+  }
+
+  // Extrai texto limpo e conciso de qualquer elemento ignorando botões de áudio duplicados
+  function extractCleanText(el) {
+    if (!el) return '';
+    const clone = el.cloneNode(true);
+    // Remove botões de áudio redundantes dentro do texto clonado
+    clone.querySelectorAll('.speech-reader-btn, .skip-links, .reading-ruler, .narrator-player, script, style').forEach(n => n.remove());
+    return clone.innerText || clone.textContent || '';
+  }
+
+  // =========================================================================
+  // 7. BOAS-VINDAS AUTOMÁTICAS AO INICIAR O SITE
+  // =========================================================================
+  function initiateWelcomeSpeech() {
+    if (a11yState.hasWelcomed) return;
+    a11yState.hasWelcomed = true;
+
+    updateSpeechButtonUI();
+
+    const welcomeMessage = 
+      'Bem-vindo ao site da Ponto Digital! O narrador de voz está ativado. ' +
+      'Softwares inteligentes B2B com total acessibilidade para pessoas cegas e com baixa visão. ' +
+      'Pressione a tecla Tab para navegar, Alt de 1 a 5 para saltar seções, ou clique em qualquer parte do site para ouvi-la.';
+
+    announceToScreenReader(welcomeMessage, true);
+
+    try {
+      speakText(welcomeMessage, document.getElementById('hero-heading'));
+    } catch (e) {
+      console.warn('Bloqueio temporário de áudio pelo navegador:', e);
+    }
+  }
+
+  // Trata política de autoplay de navegadores modernos:
+  // Se o navegador bloquear o som no onload sem gesto prévio,
+  // inicia a narração imediatamente no primeiríssimo clique ou tecla do usuário!
+  function setupAutoplayFallback() {
+    const handleFirstGesture = () => {
+      initAudioContext();
+      if (!a11yState.hasWelcomed || ('speechSynthesis' in window && !window.speechSynthesis.speaking)) {
+        initiateWelcomeSpeech();
+      }
+      window.removeEventListener('click', handleFirstGesture);
+      window.removeEventListener('keydown', handleFirstGesture);
+      window.removeEventListener('touchstart', handleFirstGesture);
+    };
+
+    window.addEventListener('click', handleFirstGesture, { once: true });
+    window.addEventListener('keydown', handleFirstGesture, { once: true });
+    window.addEventListener('touchstart', handleFirstGesture, { once: true });
+  }
+
+  // =========================================================================
+  // 8. CONTROLE DE TAMANHO DE FONTE (BAIXA VISÃO / CID H54)
   // =========================================================================
   function setFontSizeLevel(level) {
     if (level < 0) level = 0;
@@ -268,7 +469,7 @@
   }
 
   // =========================================================================
-  // 7. SELEÇÃO DE TEMAS E ALTO CONTRASTE (WCAG AAA)
+  // 9. SELEÇÃO DE TEMAS E ALTO CONTRASTE (WCAG AAA)
   // =========================================================================
   function setTheme(themeName) {
     document.documentElement.setAttribute('data-theme', themeName);
@@ -294,7 +495,7 @@
   }
 
   // =========================================================================
-  // 8. RÉGUA DE LEITURA & FONTE ATKINSON HYPERLEGIBLE
+  // 10. RÉGUA DE LEITURA & FONTE ATKINSON HYPERLEGIBLE
   // =========================================================================
   function toggleReadingRuler() {
     a11yState.rulerActive = !a11yState.rulerActive;
@@ -306,7 +507,6 @@
     announceToScreenReader(a11yState.rulerActive ? 'Régua guia de leitura ativada.' : 'Régua de leitura desativada.');
   }
 
-  // Acompanhamento do ponteiro pela régua
   window.addEventListener('mousemove', (e) => {
     if (a11yState.rulerActive && readingRuler) {
       readingRuler.style.top = e.clientY + 'px';
@@ -324,7 +524,7 @@
   }
 
   // =========================================================================
-  // 9. MODAL DE ATALHOS DE TECLADO (COM TRAP DE FOCO)
+  // 11. MODAL DE ATALHOS DE TECLADO
   // =========================================================================
   function openShortcutsModal() {
     lastFocusedElementBeforeModal = document.activeElement;
@@ -333,7 +533,6 @@
     playEarcon('toggle');
     announceToScreenReader('Guia de atalhos de teclado aberto. Pressione Escape para fechar.', true);
 
-    // Foca no botão de fechar dentro do modal
     setTimeout(() => {
       if (btnCloseShortcuts) btnCloseShortcuts.focus();
     }, 100);
@@ -351,10 +550,9 @@
   }
 
   // =========================================================================
-  // 10. ATALHOS GLOBAIS DE TECLADO
+  // 12. ATALHOS GLOBAIS DE TECLADO
   // =========================================================================
   window.addEventListener('keydown', (e) => {
-    // Tecla ESC fecha modais ou interrompe fala
     if (e.key === 'Escape') {
       if (!shortcutsModal.classList.contains('hidden')) {
         closeShortcutsModal();
@@ -364,7 +562,6 @@
       return;
     }
 
-    // Tecla '?' abre guia de atalhos (se não estiver digitando em campo de texto)
     if (e.key === '?' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) {
       e.preventDefault();
       if (shortcutsModal.classList.contains('hidden')) {
@@ -375,23 +572,19 @@
       return;
     }
 
-    // Atalhos com tecla ALT
     if (e.altKey && !e.ctrlKey && !e.metaKey) {
       switch (e.key.toLowerCase()) {
         case '1':
           e.preventDefault();
-          const a11yBar = document.getElementById('accessibility-controls');
-          if (a11yBar) {
-            btnToggleSpeech.focus();
-            announceToScreenReader('Focado na barra de acessibilidade.');
-          }
+          btnToggleSpeech.focus();
+          speakText('Barra de ferramentas de acessibilidade focada.');
           break;
         case '2':
           e.preventDefault();
           const mainContent = document.getElementById('main-content');
           if (mainContent) {
             mainContent.focus();
-            announceToScreenReader('Focado no conteúdo principal.');
+            speakText('Conteúdo principal: ' + document.getElementById('hero-heading')?.innerText);
           }
           break;
         case '3':
@@ -400,7 +593,7 @@
           if (produtosSec) {
             produtosSec.scrollIntoView({ behavior: 'smooth' });
             produtosSec.focus();
-            announceToScreenReader('Seção de produtos B2B.');
+            speakText('Catálogo de Soluções B2B da Ponto Digital: ERP, Gestão de Contratos com IA e Ponto Digital.');
           }
           break;
         case '4':
@@ -409,7 +602,7 @@
           if (dinamicasSec) {
             dinamicasSec.scrollIntoView({ behavior: 'smooth' });
             dinamicasSec.focus();
-            announceToScreenReader('Seção de dinâmicas da feira.');
+            speakText('Dinâmicas da feira: Simulador de baixa visão, Quiz de inclusão e bipes sonoros espaciais.');
           }
           break;
         case '5':
@@ -418,7 +611,15 @@
           if (contatoInput) {
             contatoInput.scrollIntoView({ behavior: 'smooth' });
             contatoInput.focus();
-            announceToScreenReader('Focado no formulário de contato.');
+            speakText('Formulário de contato focado. Digite seu nome completo.');
+          }
+          break;
+        case 'l':
+          e.preventDefault();
+          if (a11yState.isReadingFullPage) {
+            stopSpeech();
+          } else {
+            startFullPageReading();
           }
           break;
         case 'v':
@@ -441,32 +642,74 @@
     }
   });
 
-  // Foco global dispara bipe de navegação espacial (se ativado)
+  // =========================================================================
+  // 13. NAVEGAÇÃO POR FOCO DO TECLADO (TAB)
+  // =========================================================================
   document.addEventListener('focusin', (e) => {
     if (a11yState.soundEffectsEnabled) {
       playEarcon('focus');
     }
 
-    // Se o narrador automático estiver ligado, lê o texto ou rótulo do elemento focado
     if (a11yState.speechEnabled) {
       const target = e.target;
-      const textToRead = target.getAttribute('aria-label') || target.innerText || target.getAttribute('placeholder') || target.getAttribute('title');
-      if (textToRead && textToRead.trim().length > 0) {
-        speakText(textToRead.trim());
+      if (target.classList.contains('reading-ruler') || target.id === 'reading-ruler') return;
+
+      let label = target.getAttribute('aria-label') || target.getAttribute('title') || target.getAttribute('placeholder');
+      let text = target.innerText || target.value || '';
+
+      let textToRead = label || text;
+      if (textToRead && textToRead.trim().length > 0 && textToRead.trim().length < 250) {
+        speakText(textToRead.trim(), target);
       }
     }
   });
 
   // =========================================================================
-  // 11. INICIALIZAÇÃO DE EVENTOS DE INTERFACE
+  // 14. LEITURA AO CLICAR EM QUALQUER TEXTO OU SEÇÃO
+  // =========================================================================
+  document.addEventListener('click', (e) => {
+    if (!a11yState.speechEnabled) return;
+    
+    // Se clicou em controles do próprio player, botões de ação ou links de salto, deixa os eventos dedicados agirem
+    if (e.target.closest('.narrator-player, .a11y-tools-row, .modal-backdrop, .skip-links')) {
+      return;
+    }
+
+    // Se clicou diretamente em um botão de leitura de trecho
+    if (e.target.closest('.speech-reader-btn')) {
+      return; // O listener do botão tratará
+    }
+
+    // Se clicou em um parágrafo, título, card, badge ou item de lista
+    const readableTarget = e.target.closest('h1, h2, h3, h4, p, .info-card, .product-card, .team-card, .metric-card, .detail-item, .trans-item, li, address');
+    if (readableTarget) {
+      const text = extractCleanText(readableTarget);
+      if (text && text.trim().length > 0) {
+        speakText(text.trim(), readableTarget);
+      }
+    }
+  });
+
+  // =========================================================================
+  // 15. INICIALIZAÇÃO DE EVENTOS DE INTERFACE
   // =========================================================================
   function initListeners() {
-    // Botão de síntese de fala
+    updateSpeechButtonUI();
+
     if (btnToggleSpeech) {
       btnToggleSpeech.addEventListener('click', toggleSpeechNarrator);
     }
 
-    // Botão de sons / earcons
+    if (btnReadFullPage) {
+      btnReadFullPage.addEventListener('click', () => {
+        if (a11yState.isReadingFullPage) {
+          stopSpeech();
+        } else {
+          startFullPageReading();
+        }
+      });
+    }
+
     if (btnToggleSound) {
       btnToggleSound.addEventListener('click', () => {
         a11yState.soundEffectsEnabled = !a11yState.soundEffectsEnabled;
@@ -477,31 +720,15 @@
       });
     }
 
-    // Controle de fonte
-    if (btnFontInc) {
-      btnFontInc.addEventListener('click', () => setFontSizeLevel(a11yState.fontSizeLevel + 1));
-    }
-    if (btnFontDec) {
-      btnFontDec.addEventListener('click', () => setFontSizeLevel(a11yState.fontSizeLevel - 1));
-    }
-    if (btnFontReset) {
-      btnFontReset.addEventListener('click', () => setFontSizeLevel(0));
-    }
+    if (btnFontInc) btnFontInc.addEventListener('click', () => setFontSizeLevel(a11yState.fontSizeLevel + 1));
+    if (btnFontDec) btnFontDec.addEventListener('click', () => setFontSizeLevel(a11yState.fontSizeLevel - 1));
+    if (btnFontReset) btnFontReset.addEventListener('click', () => setFontSizeLevel(0));
 
-    // Seletor de temas
-    if (themeSelect) {
-      themeSelect.addEventListener('change', (e) => setTheme(e.target.value));
-    }
+    if (themeSelect) themeSelect.addEventListener('change', (e) => setTheme(e.target.value));
 
-    // Régua e Fonte Especial
-    if (btnToggleRuler) {
-      btnToggleRuler.addEventListener('click', toggleReadingRuler);
-    }
-    if (btnToggleHyperlegible) {
-      btnToggleHyperlegible.addEventListener('click', toggleHyperlegibleFont);
-    }
+    if (btnToggleRuler) btnToggleRuler.addEventListener('click', toggleReadingRuler);
+    if (btnToggleHyperlegible) btnToggleHyperlegible.addEventListener('click', toggleHyperlegibleFont);
 
-    // Modal de atalhos
     if (btnOpenShortcuts) btnOpenShortcuts.addEventListener('click', openShortcutsModal);
     if (btnCloseShortcuts) btnCloseShortcuts.addEventListener('click', closeShortcutsModal);
     if (btnModalOk) btnModalOk.addEventListener('click', closeShortcutsModal);
@@ -511,13 +738,11 @@
       });
     }
 
-    // Rodapé botões rápidos
     if (footerBtnShortcuts) footerBtnShortcuts.addEventListener('click', openShortcutsModal);
     if (footerBtnSpeech) footerBtnSpeech.addEventListener('click', toggleSpeechNarrator);
     if (footerBtnContrast) footerBtnContrast.addEventListener('click', cycleHighContrast);
 
-    // Controles do player de áudio flutuante
-    if (btnNarratorStop) btnNarratorStop.addEventListener('click', stopSpeech);
+    if (btnNarratorStop) btnNarratorStop.addEventListener('click', () => stopSpeech());
     if (btnNarratorPause) {
       btnNarratorPause.addEventListener('click', () => {
         if ('speechSynthesis' in window) {
@@ -541,48 +766,51 @@
       });
     }
 
-    // Botões dedicados de leitura em trechos específicos ("Ler este trecho")
+    // Botões dedicados de leitura ("Ouvir Seção / Ler este trecho")
     document.querySelectorAll('.speech-reader-btn').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const targetId = btn.getAttribute('data-target');
-        let textToRead = '';
+        let targetEl = null;
 
         if (targetId) {
-          const el = document.getElementById(targetId);
-          if (el) {
-            textToRead = el.innerText || el.textContent;
-          }
+          targetEl = document.getElementById(targetId);
         }
-        if (!textToRead) {
-          textToRead = btn.closest('article, section, div')?.innerText || '';
+        if (!targetEl) {
+          targetEl = btn.closest('article, section, .info-card, .team-card, .product-card, div');
         }
+
+        const textToRead = extractCleanText(targetEl);
 
         if (textToRead) {
           playEarcon('toggle');
-          speakText(textToRead);
-          announceToScreenReader('Iniciando leitura em voz alta do trecho selecionado.');
+          speakText(textToRead, targetEl);
+          announceToScreenReader('Iniciando leitura em áudio do trecho selecionado.');
         }
       });
     });
 
-    // Botões de teste de som na seção de dinâmicas
+    // Testador de earcons
     document.querySelectorAll('.test-sound-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
         const soundType = btn.getAttribute('data-sound');
         playEarcon(soundType);
       });
     });
+
+    // Inicia fala de boas-vindas e configura fallback para restrições de autoplay
+    setTimeout(() => {
+      initiateWelcomeSpeech();
+      setupAutoplayFallback();
+    }, 300);
   }
 
-  // Inicializa quando o DOM estiver pronto
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initListeners);
   } else {
     initListeners();
   }
 
-  // Exporta utilitários globais para o app.js
   window.A11Y = {
     announce: announceToScreenReader,
     playEarcon: playEarcon,

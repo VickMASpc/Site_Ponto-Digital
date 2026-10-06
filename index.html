@@ -1,0 +1,980 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="default" data-font-size="normal">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ponto Digital | Soluções em Software B2B & Acessibilidade Digital</title>
+  <meta name="description" content="Ponto Digital: Conectando você ao futuro com softwares B2B sustentáveis (ODS 12), ERP modular e contratos com IA. Plataforma 100% acessível para pessoas cegas e com baixa visão (CID H54).">
+  <meta name="keywords" content="Ponto Digital, software B2B, acessibilidade digital, leitor de tela, baixa visão, CID H54, ODS 12, ERP microempresas">
+  <meta name="author" content="Ponto Digital - Equipe de Desenvolvimento de Sistemas">
+
+  <!-- Google Fonts para máxima legibilidade -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- REGIÕES DE AVISO EM TEMPO REAL PARA LEITORES DE TELA (NVDA, JAWS, TALKBACK, VOICE OVER) -->
+  <div id="sr-announcements-polite" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+  <div id="sr-announcements-assertive" class="sr-only" aria-live="assertive" aria-atomic="true"></div>
+
+  <!-- LINKS DE SALTO RÁPIDO PARA NAVEGAÇÃO POR TECLADO E LEITORES DE TELA -->
+  <nav class="skip-links" aria-label="Atalhos de salto rápido para conteúdo">
+    <a href="#main-content" class="skip-link">Ir direto para o conteúdo principal [Alt + 2]</a>
+    <a href="#accessibility-controls" class="skip-link">Ir para painel de acessibilidade [Alt + 1]</a>
+    <a href="#produtos-b2b" class="skip-link">Ir para o catálogo de produtos e serviços [Alt + 3]</a>
+    <a href="#dinamicas-acessibilidade" class="skip-link">Ir para o laboratório e dinâmicas da feira [Alt + 4]</a>
+    <a href="#contato" class="skip-link">Ir para formulário de contato [Alt + 5]</a>
+  </nav>
+
+  <!-- BARRA DE FERRAMENTAS GLOBAL DE ACESSIBILIDADE (SUPERIOR) -->
+  <aside id="accessibility-controls" class="accessibility-bar" aria-label="Barra de Ferramentas de Acessibilidade e Auxílio a Pessoas Cegas e Baixa Visão">
+    <div class="container a11y-container">
+      <div class="a11y-group a11y-label-group">
+        <span class="a11y-badge" aria-hidden="true">♿</span>
+        <span class="a11y-title"><strong>Central de Acessibilidade (CID H54 / WCAG AAA)</strong></span>
+      </div>
+
+      <div class="a11y-tools-row">
+        <!-- Sintetizador de Áudio e Leitura em Voz Alta -->
+        <div class="a11y-item">
+          <button id="btn-toggle-speech" class="a11y-btn" aria-pressed="false" title="Ativar leitor e narrador de voz do site (Alt + V)">
+            <span class="btn-icon" aria-hidden="true">🔊</span>
+            <span class="btn-text">Narrador de Voz</span>
+          </button>
+        </div>
+
+        <div class="a11y-item">
+          <button id="btn-toggle-sound-effects" class="a11y-btn active" aria-pressed="true" title="Ativar ou desativar sons e bipes de navegação espacial (Alt + S)">
+            <span class="btn-icon" aria-hidden="true">🔔</span>
+            <span class="btn-text">Bipes de Foco</span>
+          </button>
+        </div>
+
+        <!-- Ajustes Visuais para Baixa Visão -->
+        <div class="a11y-item a11y-font-controls" role="group" aria-label="Controle de tamanho de fonte">
+          <button id="btn-font-dec" class="a11y-btn-sm" title="Diminuir tamanho do texto" aria-label="Diminuir tamanho da fonte">A-</button>
+          <button id="btn-font-reset" class="a11y-btn-sm" title="Restaurar tamanho padrão do texto" aria-label="Restaurar tamanho padrão da fonte">100%</button>
+          <button id="btn-font-inc" class="a11y-btn-sm" title="Aumentar tamanho do texto" aria-label="Aumentar tamanho da fonte">A+</button>
+        </div>
+
+        <!-- Seleção de Temas de Alto Contraste -->
+        <div class="a11y-item">
+          <label for="theme-select" class="sr-only">Esquema de Cores e Contraste</label>
+          <select id="theme-select" class="a11y-select" aria-label="Selecione o esquema de cores e alto contraste">
+            <option value="default">🎨 Tema Padrão Clean</option>
+            <option value="dark">🌙 Modo Escuro Moderno</option>
+            <option value="high-contrast-yellow">🟨 Alto Contraste (Amarelo sobre Preto)</option>
+            <option value="high-contrast-white">⬜ Alto Contraste (Branco sobre Preto)</option>
+            <option value="high-contrast-invert">🔲 Contraste Invertido (Preto sobre Branco)</option>
+          </select>
+        </div>
+
+        <!-- Régua de Leitura e Fonte Acessível -->
+        <div class="a11y-item">
+          <button id="btn-toggle-ruler" class="a11y-btn" aria-pressed="false" title="Ativar régua guia para visão tubular ou foco de leitura">
+            <span class="btn-icon" aria-hidden="true">📏</span>
+            <span class="btn-text">Régua de Leitura</span>
+          </button>
+        </div>
+
+        <div class="a11y-item">
+          <button id="btn-toggle-hyperlegible" class="a11y-btn" aria-pressed="false" title="Alternar para fonte Atkinson de hiperlegibilidade">
+            <span class="btn-icon" aria-hidden="true">🔤</span>
+            <span class="btn-text">Hiperlegibilidade</span>
+          </button>
+        </div>
+
+        <!-- Modal de Atalhos -->
+        <div class="a11y-item">
+          <button id="btn-open-shortcuts" class="a11y-btn a11y-btn-shortcuts" aria-haspopup="dialog" aria-expanded="false" title="Ver guia de atalhos de teclado (Pressione '?')">
+            <span class="btn-icon" aria-hidden="true">⌨️</span>
+            <span class="btn-text">Atalhos [?]</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- RÉGUA GUIA VISUAL DE LEITURA (INVISÍVEL POR PADRÃO) -->
+  <div id="reading-ruler" class="reading-ruler" aria-hidden="true"></div>
+
+  <!-- PAINEL FIXO DO NARRADOR EM EXECUÇÃO -->
+  <div id="narrator-floating-player" class="narrator-player hidden" role="region" aria-label="Controles do Reprodutor de Voz do Site">
+    <div class="player-info">
+      <span class="player-pulse" aria-hidden="true"></span>
+      <span id="player-current-text" class="player-text">Narrador pronto...</span>
+    </div>
+    <div class="player-actions">
+      <button id="btn-narrator-pause" class="player-btn" aria-label="Pausar ou Retomar fala" title="Pausar / Retomar">⏸️</button>
+      <button id="btn-narrator-stop" class="player-btn" aria-label="Parar leitura em voz alta" title="Parar fala">⏹️</button>
+      <div class="player-speed">
+        <label for="narrator-speed-select" class="sr-only">Velocidade da voz</label>
+        <select id="narrator-speed-select" class="player-select" aria-label="Velocidade da voz">
+          <option value="0.8">0.8x</option>
+          <option value="1.0" selected>1.0x</option>
+          <option value="1.2">1.2x</option>
+          <option value="1.5">1.5x</option>
+          <option value="1.8">1.8x</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- CABEÇALHO PRINCIPAL DO SITE -->
+  <header class="site-header" role="banner">
+    <div class="container header-container">
+      <div class="brand-wrapper">
+        <a href="#hero" class="brand-link" aria-label="Ponto Digital - Página Inicial">
+          <div class="brand-logo-mark" aria-hidden="true">
+            <span class="logo-circle"></span>
+            <span class="logo-pulse"></span>
+          </div>
+          <div class="brand-text">
+            <span class="brand-name">Ponto Digital</span>
+            <span class="brand-tagline">Conectando você ao Futuro</span>
+          </div>
+        </a>
+      </div>
+
+      <nav class="main-navigation" role="navigation" aria-label="Menu Principal da Empresa">
+        <button id="mobile-menu-toggle" class="mobile-toggle" aria-expanded="false" aria-controls="primary-nav-list" aria-label="Abrir menu de navegação">
+          <span class="hamburger-bar"></span>
+          <span class="hamburger-bar"></span>
+          <span class="hamburger-bar"></span>
+        </button>
+
+        <ul id="primary-nav-list" class="nav-links">
+          <li><a href="#sobre" class="nav-link">Sobre Nós</a></li>
+          <li><a href="#produtos-b2b" class="nav-link">Soluções B2B</a></li>
+          <li><a href="#ods-sustentabilidade" class="nav-link">Sustentabilidade ODS 12</a></li>
+          <li><a href="#dinamicas-acessibilidade" class="nav-link">Dinâmicas da Feira</a></li>
+          <li><a href="#mvp-interativo" class="nav-link">Demo MVP</a></li>
+          <li><a href="#equipe" class="nav-link">Nossa Equipe</a></li>
+          <li><a href="#contato" class="nav-link btn-nav-cta">Fale Conosco</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <!-- CONTEÚDO PRINCIPAL -->
+  <main id="main-content" role="main" tabindex="-1">
+    
+    <!-- SEÇÃO HERO / APRESENTAÇÃO -->
+    <section id="hero" class="hero-section" aria-labelledby="hero-heading">
+      <div class="container hero-grid">
+        <div class="hero-content">
+          <div class="hero-pill">
+            <span class="pill-dot" aria-hidden="true"></span>
+            <span>Desenvolvimento de Software B2B & Inclusão Total</span>
+          </div>
+
+          <h1 id="hero-heading" class="hero-title">
+            Softwares inteligentes que digitalizam sua empresa e <span class="highlight-gradient">incluem todas as pessoas.</span>
+          </h1>
+
+          <p class="hero-description">
+            A <strong>Ponto Digital</strong> desenvolve soluções corporativas robustas para pequenas e médias empresas, eliminando papel com o compromisso da <strong>ODS 12</strong> e garantindo acesso irrestrito para pessoas cegas e com baixa visão (<strong>CID H54</strong>).
+          </p>
+
+          <div class="hero-actions">
+            <a href="#produtos-b2b" class="btn btn-primary" id="cta-produtos">
+              <span>Explorar Soluções B2B</span>
+              <span class="btn-arrow" aria-hidden="true">→</span>
+            </a>
+            <button id="btn-read-hero" class="btn btn-secondary speech-reader-btn" data-target="hero-content" aria-label="Ouvir apresentação da Ponto Digital em áudio">
+              <span aria-hidden="true">🎧</span>
+              <span>Ouvir Apresentação</span>
+            </button>
+          </div>
+
+          <div class="hero-accessibility-badges" role="region" aria-label="Certificações e compromissos">
+            <div class="badge-item">
+              <span class="badge-icon" aria-hidden="true">👁️</span>
+              <div>
+                <strong>Acessibilidade CID H54</strong>
+                <p>Navegação por áudio, tela e contraste</p>
+              </div>
+            </div>
+            <div class="badge-item">
+              <span class="badge-icon" aria-hidden="true">🌱</span>
+              <div>
+                <strong>ODS 12 - ONU</strong>
+                <p>Zero desperdício de papel e processos verdes</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="hero-visual" aria-labelledby="hero-visual-caption">
+          <div class="visual-card">
+            <div class="visual-card-header">
+              <span class="status-indicator" aria-hidden="true"></span>
+              <span class="card-caption" id="hero-visual-caption">Simulação de Painel Digital Acessível</span>
+              <span class="card-pill">Status: Online</span>
+            </div>
+            
+            <div class="visual-metrics-grid">
+              <div class="metric-card">
+                <span class="metric-num">100%</span>
+                <span class="metric-label">Compatível com Leitores de Tela</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-num">0%</span>
+                <span class="metric-label">Uso de Papel Físico (ODS 12)</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-num">&lt; 0.3s</span>
+                <span class="metric-label">Tempo de Resposta em Áudio</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-num">WCAG</span>
+                <span class="metric-label">Padrão AAA de Alto Contraste</span>
+              </div>
+            </div>
+
+            <div class="visual-interactive-box">
+              <p class="visual-box-title"><strong>🔊 Teste Rápido de Áudio-Descrição:</strong></p>
+              <p class="visual-box-text" id="sample-audiodesc">
+                "Você está explorando o portal oficial da Ponto Digital. Todas as ações do mouse possuem equivalência imediata no teclado e narração clara."
+              </p>
+              <button class="btn-sample-audio speech-reader-btn" data-target="sample-audiodesc" aria-label="Reproduzir exemplo de áudio-descrição">
+                <span aria-hidden="true">▶️</span> Reproduzir Áudio Exemplo
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SEÇÃO SOBRE A EMPRESA & IDENTIDADE -->
+    <section id="sobre" class="section-padding bg-subtle" aria-labelledby="sobre-heading">
+      <div class="container">
+        <div class="section-header text-center">
+          <span class="section-subtitle">Quem Somos</span>
+          <h2 id="sobre-heading" class="section-title">Inovação B2B com Propósito e Consciência Social</h2>
+          <p class="section-desc">
+            Nascida no curso de Desenvolvimento de Sistemas, a Ponto Digital conecta negócios ao futuro através da automação inteligente de processos corporativos.
+          </p>
+          <button class="btn btn-audio-small speech-reader-btn" data-target="sobre" aria-label="Ouvir seção Sobre a Empresa">
+            <span aria-hidden="true">🎧</span> Ler esta seção
+          </button>
+        </div>
+
+        <div class="info-grid-3">
+          <article class="info-card" tabindex="0">
+            <div class="info-card-icon" aria-hidden="true">🏢</div>
+            <h3 class="info-card-title">Área de Atuação</h3>
+            <p class="info-card-text">
+              Desenvolvimento de softwares <strong>B2B (Business-to-Business)</strong>. Atendemos micro, pequenas e médias empresas que buscam modernizar sua gestão, contratos e controle operacional sem burocracia.
+            </p>
+          </article>
+
+          <article class="info-card" tabindex="0">
+            <div class="info-card-icon" aria-hidden="true">📍</div>
+            <h3 class="info-card-title">Sede e Atendimento</h3>
+            <p class="info-card-text">
+              Sediada no Brasil com atuação digital global. Escritório corporativo localizado na <strong>Rua das Palmeiras, nº 1250, Sala 304, Chácara Santo Antônio, São Paulo/SP</strong> (CEP: 04719-999).
+            </p>
+          </article>
+
+          <article class="info-card" tabindex="0">
+            <div class="info-card-icon" aria-hidden="true">🎯</div>
+            <h3 class="info-card-title">Missão & Acessibilidade</h3>
+            <p class="info-card-text">
+              Desenvolver tecnologia que não deixe ninguém para trás. Nossas interfaces priorizam a experiência de usuários com <strong>deficiência visual ou baixa visão (CID H54)</strong> em conformidade com as diretrizes internacionais.
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- SEÇÃO CATÁLOGO DE PRODUTOS B2B -->
+    <section id="produtos-b2b" class="section-padding" aria-labelledby="produtos-heading">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-subtitle">Nossos Produtos</span>
+          <h2 id="produtos-heading" class="section-title">Soluções Corporativas Modulares e Inteligentes</h2>
+          <p class="section-desc">
+            Sistemas desenvolvidos para otimizar tempo, cortar custos operacionais e acelerar a tomada de decisão em empresas de todos os portes.
+          </p>
+        </div>
+
+        <div class="products-grid">
+          <!-- Produto 1: ERP Modular -->
+          <article class="product-card" tabindex="0" id="produto-erp">
+            <div class="product-badge">Mais Popular</div>
+            <div class="product-icon-wrap" aria-hidden="true">
+              <span class="product-icon">📊</span>
+            </div>
+            <h3 class="product-title">ERP Modular para Microempresas</h3>
+            <p class="product-summary">
+              Sistema de gestão empresarial leve, focado em controle financeiro simplificado, fluxo de caixa instantâneo e estoque em tempo real para pequenos e médios negócios.
+            </p>
+            <ul class="product-features" aria-label="Principais recursos do ERP Modular">
+              <li><span aria-hidden="true">✓</span> Fluxo de caixa com alertas sonoros e gráficos descritivos</li>
+              <li><span aria-hidden="true">✓</span> Controle de estoque em tempo real sem papel</li>
+              <li><span aria-hidden="true">✓</span> Relatórios automatizados em 1 clique em formato acessível</li>
+              <li><span aria-hidden="true">✓</span> Emissão simplificada de documentos digitais</li>
+            </ul>
+            <div class="product-footer">
+              <button class="btn btn-outline speech-reader-btn" data-target="produto-erp" aria-label="Ouvir detalhes do ERP Modular">
+                <span aria-hidden="true">🔊</span> Ouvir Detalhes
+              </button>
+              <a href="#contato" class="btn btn-primary-sm">Solicitar Demonstração</a>
+            </div>
+          </article>
+
+          <!-- Produto 2: Gestão de Contratos IA -->
+          <article class="product-card" tabindex="0" id="produto-contratos">
+            <div class="product-badge badge-ia">Inteligência Artificial</div>
+            <div class="product-icon-wrap" aria-hidden="true">
+              <span class="product-icon">🤖</span>
+            </div>
+            <h3 class="product-title">Plataforma de Gestão de Contratos com IA</h3>
+            <p class="product-summary">
+              Software SaaS para análise automatizada de cláusulas de contratos, extração ágil de prazos de vigência e alertas inteligentes de renovação jurídica.
+            </p>
+            <ul class="product-features" aria-label="Principais recursos da Plataforma de Contratos">
+              <li><span aria-hidden="true">✓</span> Leitura e resumo automático de cláusulas contratuais complexas</li>
+              <li><span aria-hidden="true">✓</span> Notificações antecipadas de reajustes e vencimentos</li>
+              <li><span aria-hidden="true">✓</span> Áudio-descrição de pareceres jurídicos para gestores cegos</li>
+              <li><span aria-hidden="true">✓</span> Repositório seguro na nuvem com criptografia de ponta a ponta</li>
+            </ul>
+            <div class="product-footer">
+              <button class="btn btn-outline speech-reader-btn" data-target="produto-contratos" aria-label="Ouvir detalhes da Plataforma de Contratos">
+                <span aria-hidden="true">🔊</span> Ouvir Detalhes
+              </button>
+              <a href="#contato" class="btn btn-primary-sm">Solicitar Demonstração</a>
+            </div>
+          </article>
+
+          <!-- Produto 3: Ponto Digital Sustentável -->
+          <article class="product-card" tabindex="0" id="produto-ponto">
+            <div class="product-badge badge-eco">Eco & Acessível</div>
+            <div class="product-icon-wrap" aria-hidden="true">
+              <span class="product-icon">⏱️</span>
+            </div>
+            <h3 class="product-title">Sistema de Ponto & Presença Digital</h3>
+            <p class="product-summary">
+              Solução completa de registro de jornada de trabalho com verificação de voz e biometria inclusiva, gerando folhas de espelho de ponto eletrônicas sem impressão.
+            </p>
+            <ul class="product-features" aria-label="Principais recursos do Sistema de Ponto">
+              <li><span aria-hidden="true">✓</span> Confirmação imediata do registro por comando de voz e áudio</li>
+              <li><span aria-hidden="true">✓</span> Totalmente conforme a legislação trabalhista brasileira</li>
+              <li><span aria-hidden="true">✓</span> Integração direta com folhas de pagamento e RH</li>
+              <li><span aria-hidden="true">✓</span> Economia total de papel cartão e bobinas térmicas</li>
+            </ul>
+            <div class="product-footer">
+              <button class="btn btn-outline speech-reader-btn" data-target="produto-ponto" aria-label="Ouvir detalhes do Sistema de Ponto">
+                <span aria-hidden="true">🔊</span> Ouvir Detalhes
+              </button>
+              <a href="#contato" class="btn btn-primary-sm">Solicitar Demonstração</a>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- SEÇÃO SUSTENTABILIDADE & ODS 12 -->
+    <section id="ods-sustentabilidade" class="section-padding bg-subtle" aria-labelledby="ods-heading">
+      <div class="container">
+        <div class="ods-wrapper">
+          <div class="ods-header-content">
+            <div class="ods-badge">
+              <span class="ods-num" aria-hidden="true">12</span>
+              <span>ODS 12 · Consumo e Produção Responsáveis</span>
+            </div>
+            <h2 id="ods-heading" class="section-title">Compromisso com o Futuro do Planeta</h2>
+            <p class="section-desc">
+              Nossa empresa vende softwares corporativos que substituem processos manuais e burocráticos. Ao digitalizar relatórios, contratos e registros financeiros, eliminamos toneladas de impressões e resíduos físicos em nossos clientes parceiros.
+            </p>
+            <button class="btn btn-audio-small speech-reader-btn" data-target="ods-sustentabilidade" aria-label="Ouvir compromisso de sustentabilidade">
+              <span aria-hidden="true">🎧</span> Ouvir compromisso ODS 12
+            </button>
+          </div>
+
+          <!-- CALCULADORA INTERATIVA DE ECONOMIA DE PAPEL E SUSTENTABILIDADE -->
+          <div class="ods-calculator-card" role="region" aria-labelledby="calc-title">
+            <h3 id="calc-title" class="calc-card-title">🌱 Calculadora Interativa de Economia Ecológica</h3>
+            <p class="calc-card-subtitle">Descubra o impacto positivo da digitalização da sua empresa com a Ponto Digital:</p>
+
+            <div class="calc-input-group">
+              <label for="input-folhas-mes" class="calc-label">Número de documentos ou folhas impressas por mês na sua empresa:</label>
+              <div class="calc-slider-wrapper">
+                <input type="range" id="input-folhas-mes" min="100" max="10000" step="100" value="1500" aria-valuemin="100" aria-valuemax="10000" aria-valuenow="1500" aria-valuetext="1500 folhas de papel por mês">
+                <span id="label-folhas-val" class="slider-val" aria-live="polite">1.500 folhas/mês</span>
+              </div>
+            </div>
+
+            <div class="calc-results-grid" aria-live="polite" id="calc-results-region">
+              <div class="calc-result-box">
+                <span class="result-icon" aria-hidden="true">🌳</span>
+                <span id="res-arvores" class="result-number">1,8</span>
+                <span class="result-label">Árvores salvas por ano</span>
+              </div>
+              <div class="calc-result-box">
+                <span class="result-icon" aria-hidden="true">💧</span>
+                <span id="res-agua" class="result-number">18.000 L</span>
+                <span class="result-label">Litros de água preservados</span>
+              </div>
+              <div class="calc-result-box">
+                <span class="result-icon" aria-hidden="true">📉</span>
+                <span id="res-co2" class="result-number">81 kg</span>
+                <span class="result-label">Menos CO₂ emitido</span>
+              </div>
+            </div>
+
+            <button id="btn-read-calc-results" class="btn btn-secondary btn-full speech-reader-btn" data-target="calc-results-region" aria-label="Ouvir resultado da calculadora de impacto ecológico">
+              <span aria-hidden="true">🔊</span> Ouvir Meu Impacto Ecológico em Áudio
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SEÇÃO DINÂMICAS E JOGOS DA FEIRA (INTERATIVIDADE E ACESSIBILIDADE CID H54) -->
+    <section id="dinamicas-acessibilidade" class="section-padding" aria-labelledby="dinamicas-heading">
+      <div class="container">
+        <div class="section-header text-center">
+          <span class="section-subtitle">Especial para a Feira do Curso</span>
+          <h2 id="dinamicas-heading" class="section-title">Dinâmicas, Jogos & Laboratório Interativo de Acessibilidade</h2>
+          <p class="section-desc">
+            Espaço interativo desenvolvido especialmente para os visitantes da nossa feira! Experimente como uma pessoa cega ou com baixa visão (CID H54) navega na web e teste seus conhecimentos com nosso quiz inclusivo.
+          </p>
+        </div>
+
+        <div class="fair-activities-tabs" role="tablist" aria-label="Atividades da Feira de Apresentação">
+          <button role="tab" id="tab-simulador" aria-selected="true" aria-controls="panel-simulador" class="tab-btn active" tabindex="0">
+            <span>👓 1. Simulador de Baixa Visão & Leitor</span>
+          </button>
+          <button role="tab" id="tab-quiz" aria-selected="false" aria-controls="panel-quiz" class="tab-btn" tabindex="-1">
+            <span>🎯 2. Quiz Interativo de Inclusão</span>
+          </button>
+          <button role="tab" id="tab-audio-synth" aria-selected="false" aria-controls="panel-audio-synth" class="tab-btn" tabindex="-1">
+            <span>🎵 3. Bipes e Sons Espaciais (Earcons)</span>
+          </button>
+        </div>
+
+        <!-- PAINEL 1: SIMULADOR DE BAIXA VISÃO E AUDIÇÃO DE LEITOR -->
+        <div id="panel-simulador" role="tabpanel" aria-labelledby="tab-simulador" class="tab-panel active">
+          <div class="simulator-card">
+            <div class="simulator-instructions">
+              <h3 class="simulator-title">Simulação Empática: Como pessoas com Baixa Visão percebem a tela?</h3>
+              <p>
+                Selecione um filtro de visão abaixo para experimentar na prática a dificuldade visual. Em seguida, utilize as ferramentas da nossa barra superior (alto contraste, áudio narrador e aumento de fonte) para notar a enorme diferença!
+              </p>
+            </div>
+
+            <div class="vision-filters-row" role="group" aria-label="Filtros de simulação de baixa visão">
+              <button class="filter-btn active" data-filter="none" aria-pressed="true">Visão Normal (Sem filtro)</button>
+              <button class="filter-btn" data-filter="blur" aria-pressed="false">Visão Embaçada (Catarata / Miopia Alta)</button>
+              <button class="filter-btn" data-filter="tunnel" aria-pressed="false">Visão Tubular (Glaucoma)</button>
+              <button class="filter-btn" data-filter="low-contrast" aria-pressed="false">Perda Severa de Contraste</button>
+            </div>
+
+            <div id="simulation-preview-box" class="simulation-preview" tabindex="0" aria-label="Área de teste do simulador">
+              <div class="sim-content">
+                <h4>Exemplo de Leitura sob Condições Visuais Diversas:</h4>
+                <p>
+                  "O compromisso com a acessibilidade não é apenas uma funcionalidade técnica, mas um direito fundamental de todas as pessoas com deficiência à informação e ao trabalho digno."
+                </p>
+                <div class="sim-actions">
+                  <button class="btn btn-primary-sm speech-reader-btn" data-target="simulation-preview-box" aria-label="Ouvir parágrafo do simulador">
+                    🔊 Ouvir este texto em voz alta
+                  </button>
+                  <button id="btn-resolve-sim" class="btn btn-secondary-sm">
+                    ✨ Aplicar Alto Contraste para Resolver
+                  </button>
+                </div>
+              </div>
+            </div>
+            <p id="filter-status-desc" class="filter-desc" aria-live="polite">Filtro atual: Visão Normal. Nenhum efeito aplicado.</p>
+          </div>
+        </div>
+
+        <!-- PAINEL 2: QUIZ INTERATIVO DE INCLUSÃO DIGITAL E ODS 12 -->
+        <div id="panel-quiz" role="tabpanel" aria-labelledby="tab-quiz" class="tab-panel hidden">
+          <div class="quiz-card" id="quiz-container">
+            <div class="quiz-header">
+              <h3 class="quiz-title">Desafio Rápido: Conhecimentos em Acessibilidade & Sustentabilidade</h3>
+              <p class="quiz-status" id="quiz-progress" aria-live="polite">Pergunta 1 de 3</p>
+            </div>
+
+            <div class="quiz-body" id="quiz-question-container" aria-live="polite">
+              <p class="quiz-question" id="quiz-question-text">
+                O que significa o código internacional CID H54 abordado no projeto da Ponto Digital?
+              </p>
+              <div class="quiz-options" role="radiogroup" aria-labelledby="quiz-question-text" id="quiz-options-group">
+                <!-- Opções renderizadas via JavaScript -->
+              </div>
+            </div>
+
+            <div class="quiz-feedback hidden" id="quiz-feedback-box" role="alert" aria-live="assertive">
+              <p id="quiz-feedback-text"></p>
+            </div>
+
+            <div class="quiz-footer">
+              <button id="btn-quiz-next" class="btn btn-primary hidden">Próxima Pergunta →</button>
+              <button id="btn-quiz-read" class="btn btn-secondary speech-reader-btn" data-target="quiz-question-container" aria-label="Ouvir a pergunta atual e as opções do quiz">
+                <span aria-hidden="true">🔊</span> Ouvir Pergunta do Quiz
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- PAINEL 3: Bipes e Earcons de Navegação Espacial -->
+        <div id="panel-audio-synth" role="tabpanel" aria-labelledby="tab-audio-synth" class="tab-panel hidden">
+          <div class="earcon-card">
+            <h3 class="earcon-title">🎵 Sons de Navegação Espacial (Earcons Web Audio)</h3>
+            <p class="earcon-desc">
+              Pessoas cegas utilizam sinais sonoros sutis (earcons) para saber quando mudaram de campo, quando um botão foi acionado, ou quando um alerta foi disparado. Nossos sintetizadores usam a <strong>Web Audio API nativa</strong> sem pesar no carregamento da página:
+            </p>
+
+            <div class="earcon-test-grid">
+              <div class="earcon-item">
+                <button class="btn btn-outline test-sound-btn" data-sound="focus" aria-label="Testar bipe sutil de foco em elemento">
+                  <span aria-hidden="true">🔔</span> Som de Foco (440Hz)
+                </button>
+                <p>Acionado quando um elemento recebe foco do teclado.</p>
+              </div>
+
+              <div class="earcon-item">
+                <button class="btn btn-outline test-sound-btn" data-sound="success" aria-label="Testar acorde sonoro de sucesso">
+                  <span aria-hidden="true">🎉</span> Som de Sucesso (Acorde Maior)
+                </button>
+                <p>Acionado quando uma ação é concluída ou formulário enviado.</p>
+              </div>
+
+              <div class="earcon-item">
+                <button class="btn btn-outline test-sound-btn" data-sound="toggle" aria-label="Testar som de alternância de estado">
+                  <span aria-hidden="true">🔄</span> Som de Alternância (Toggle)
+                </button>
+                <p>Tocado ao ligar/desligar alto contraste ou temas.</p>
+              </div>
+
+              <div class="earcon-item">
+                <button class="btn btn-outline test-sound-btn" data-sound="alert" aria-label="Testar som de atenção e erro">
+                  <span aria-hidden="true">⚠️</span> Som de Alerta / Atenção
+                </button>
+                <p>Tocado quando há um campo obrigatório não preenchido.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SEÇÃO DEMONSTRAÇÃO DO MVP (Mágico de Oz - Inserção & Análise Simplificada) -->
+    <section id="mvp-interativo" class="section-padding bg-subtle" aria-labelledby="mvp-heading">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-subtitle">Demonstração Prática do Produto</span>
+          <h2 id="mvp-heading" class="section-title">MVP do ERP Ponto Digital: Simulador Operacional</h2>
+          <p class="section-desc">
+            Conforme definido em nosso planejamento (modelo MVP funcional), teste abaixo o módulo financeiro simplificado com feedback sonoro imediato e relatório em áudio.
+          </p>
+        </div>
+
+        <div class="mvp-board">
+          <div class="mvp-form-col">
+            <h3 class="mvp-col-title">📥 Lançamento de Movimentação</h3>
+            <form id="mvp-transaction-form" class="mvp-form" novalidate>
+              <div class="form-group">
+                <label for="mvp-desc">Descrição do Lançamento:</label>
+                <input type="text" id="mvp-desc" class="form-input" placeholder="Ex: Licença de software B2B, Venda de serviço" required aria-required="true">
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="mvp-valor">Valor em Reais (R$):</label>
+                  <input type="number" id="mvp-valor" class="form-input" placeholder="Ex: 850.00" step="0.01" min="1" required aria-required="true">
+                </div>
+
+                <div class="form-group">
+                  <label for="mvp-tipo">Tipo de Operação:</label>
+                  <select id="mvp-tipo" class="form-input" required>
+                    <option value="receita">🟢 Receita (Entrada)</option>
+                    <option value="despesa">🔴 Despesa (Saída)</option>
+                  </select>
+                </div>
+              </div>
+
+              <button type="submit" class="btn btn-primary btn-full">
+                <span>➕ Registrar no Sistema</span>
+              </button>
+            </form>
+          </div>
+
+          <div class="mvp-dashboard-col" role="region" aria-labelledby="mvp-dash-title">
+            <div class="mvp-dash-header">
+              <h3 id="mvp-dash-title" class="mvp-col-title">📊 Balanço Financeiro em Tempo Real</h3>
+              <button id="btn-read-mvp-summary" class="btn btn-outline-sm speech-reader-btn" data-target="mvp-dash-metrics" aria-label="Ouvir resumo do balanço financeiro em áudio">
+                <span aria-hidden="true">🔊</span> Ouvir Saldo
+              </button>
+            </div>
+
+            <div class="mvp-metrics" id="mvp-dash-metrics" aria-live="polite">
+              <div class="mvp-metric-card positive">
+                <span class="metric-caption">Receitas Totais</span>
+                <span id="mvp-total-receitas" class="metric-val">R$ 5.420,00</span>
+              </div>
+
+              <div class="mvp-metric-card negative">
+                <span class="metric-caption">Despesas Totais</span>
+                <span id="mvp-total-despesas" class="metric-val">R$ 1.630,00</span>
+              </div>
+
+              <div class="mvp-metric-card balance">
+                <span class="metric-caption">Saldo Disponível</span>
+                <span id="mvp-saldo-liquido" class="metric-val">R$ 3.790,00</span>
+              </div>
+            </div>
+
+            <div class="mvp-transactions-list-box">
+              <h4 class="trans-list-title">Últimos Lançamentos:</h4>
+              <ul id="mvp-transactions-list" class="transactions-list" aria-label="Lista de transações financeiras registradas">
+                <li class="trans-item receita">
+                  <span class="trans-desc">Venda de Licença ERP Trimestral</span>
+                  <span class="trans-val">+ R$ 3.500,00</span>
+                </li>
+                <li class="trans-item receita">
+                  <span class="trans-desc">Consultoria de Acessibilidade Web</span>
+                  <span class="trans-val">+ R$ 1.920,00</span>
+                </li>
+                <li class="trans-item despesa">
+                  <span class="trans-desc">Hospedagem em Nuvem Verde</span>
+                  <span class="trans-val">- R$ 1.630,00</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SEÇÃO NOSSA EQUIPE (INTEGRANTES CONFORME RELATÓRIO) -->
+    <section id="equipe" class="section-padding" aria-labelledby="equipe-heading">
+      <div class="container">
+        <div class="section-header text-center">
+          <span class="section-subtitle">Pessoas que Fazem Acontecer</span>
+          <h2 id="equipe-heading" class="section-title">Equipe de Desenvolvimento e Liderança</h2>
+          <p class="section-desc">
+            Conheça os profissionais por trás da concepção, desenvolvimento tecnológico, marketing e governança da Ponto Digital.
+          </p>
+          <button class="btn btn-audio-small speech-reader-btn" data-target="equipe-grid" aria-label="Ouvir a lista completa de membros da equipe">
+            <span aria-hidden="true">🎧</span> Ouvir lista da equipe
+          </button>
+        </div>
+
+        <div class="team-grid" id="equipe-grid">
+          <!-- Diego Alves -->
+          <article class="team-card" tabindex="0">
+            <div class="team-avatar-wrap" aria-hidden="true">
+              <span class="team-avatar-initials">DA</span>
+            </div>
+            <h3 class="team-name">Diego Alves</h3>
+            <span class="team-role role-owner">Dono da Empresa & Fundador</span>
+            <p class="team-bio">
+              Visão estratégica de negócios, planejamento financeiro e direcionamento geral das metas corporativas da Ponto Digital.
+            </p>
+          </article>
+
+          <!-- Victor Monteiro -->
+          <article class="team-card featured-member" tabindex="0">
+            <div class="team-avatar-wrap" aria-hidden="true">
+              <span class="team-avatar-initials">VM</span>
+            </div>
+            <h3 class="team-name">Victor Monteiro</h3>
+            <span class="team-role role-tech">Desenvolvedor Chefe</span>
+            <p class="team-bio">
+              Arquitetura dos sistemas de software, engenharia de acessibilidade web (WCAG AAA), integração de áudio e supervisão do código-fonte.
+            </p>
+          </article>
+
+          <!-- Jonathan Vrena -->
+          <article class="team-card" tabindex="0">
+            <div class="team-avatar-wrap" aria-hidden="true">
+              <span class="team-avatar-initials">JV</span>
+            </div>
+            <h3 class="team-name">Jonathan Vrena</h3>
+            <span class="team-role role-mgmt">Gerente Geral</span>
+            <p class="team-bio">
+              Gestão de prazos e sprints, alinhamento dos requisitos do projeto e coordenação ágil das entregas da equipe.
+            </p>
+          </article>
+
+          <!-- Matheus Morais -->
+          <article class="team-card" tabindex="0">
+            <div class="team-avatar-wrap" aria-hidden="true">
+              <span class="team-avatar-initials">MM</span>
+            </div>
+            <h3 class="team-name">Matheus Morais</h3>
+            <span class="team-role role-dev">Desenvolvedor & Marketing</span>
+            <p class="team-bio">
+              Desenvolvimento de interfaces intuitivas, criação de campanhas de divulgação e estratégia de posicionamento da marca.
+            </p>
+          </article>
+
+          <!-- Gabriel Oliveira -->
+          <article class="team-card" tabindex="0">
+            <div class="team-avatar-wrap" aria-hidden="true">
+              <span class="team-avatar-initials">GO</span>
+            </div>
+            <h3 class="team-name">Gabriel Oliveira</h3>
+            <span class="team-role role-sales">Vendedor & Marketing</span>
+            <p class="team-bio">
+              Prospecção de clientes B2B, análise de mercado, vendas consultivas e relacionamento institucional com parceiros.
+            </p>
+          </article>
+
+          <!-- Yamil Josué -->
+          <article class="team-card" tabindex="0">
+            <div class="team-avatar-wrap" aria-hidden="true">
+              <span class="team-avatar-initials">YJ</span>
+            </div>
+            <h3 class="team-name">Yamil Josué</h3>
+            <span class="team-role role-dev">Ajudante do Desenvolvedor Chefe</span>
+            <p class="team-bio">
+              Apoio direto na codificação, implementação de componentes de tela, testes de usabilidade e revisão de consistência.
+            </p>
+          </article>
+
+          <!-- Vinicius Ferreira -->
+          <article class="team-card" tabindex="0">
+            <div class="team-avatar-wrap" aria-hidden="true">
+              <span class="team-avatar-initials">VF</span>
+            </div>
+            <h3 class="team-name">Vinicius Ferreira</h3>
+            <span class="team-role role-sales">Assistente do Gerente & Vendedor</span>
+            <p class="team-bio">
+              Suporte às rotinas de gerência, acompanhamento operacional de vendas e atendimento de primeiro nível a clientes.
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- SEÇÃO FORMULÁRIO DE CONTATO ACESSÍVEL & LOCALIZAÇÃO -->
+    <section id="contato" class="section-padding bg-subtle" aria-labelledby="contato-heading">
+      <div class="container contact-grid">
+        <div class="contact-info-col">
+          <span class="section-subtitle">Fale com Especialistas</span>
+          <h2 id="contato-heading" class="section-title">Pronto para digitalizar seu negócio com total acessibilidade?</h2>
+          <p class="section-desc">
+            Envie sua mensagem ou agende uma reunião presencial em nossa sede. Nosso time responderá em até 24 horas úteis.
+          </p>
+
+          <div class="contact-card-details">
+            <div class="detail-item">
+              <span class="detail-icon" aria-hidden="true">📍</span>
+              <div>
+                <strong>Endereço Corporativo:</strong>
+                <p>Rua das Palmeiras, nº 1250, Sala 304<br>Chácara Santo Antônio – São Paulo/SP<br>CEP: 04719-999</p>
+              </div>
+            </div>
+
+            <div class="detail-item">
+              <span class="detail-icon" aria-hidden="true">📧</span>
+              <div>
+                <strong>E-mail Institucional:</strong>
+                <p><a href="mailto:contato@pontodigital.dev.br" class="text-link">contato@pontodigital.dev.br</a></p>
+              </div>
+            </div>
+
+            <div class="detail-item">
+              <span class="detail-icon" aria-hidden="true">📞</span>
+              <div>
+                <strong>Telefone & WhatsApp Comercial:</strong>
+                <p><a href="tel:+5511998765432" class="text-link">(11) 99876-5432</a></p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="contact-form-col">
+          <div class="contact-card">
+            <h3 class="form-title">Envie uma Mensagem Acessível</h3>
+            <p class="form-instructions">
+              Todos os campos marcados com um asterisco (<span aria-hidden="true">*</span><span class="sr-only">obrigatório</span>) são necessários.
+            </p>
+
+            <form id="contact-form" novalidate>
+              <div class="form-group">
+                <label for="contact-name">Seu Nome Completo: <span class="required-mark" aria-hidden="true">*</span></label>
+                <input type="text" id="contact-name" class="form-input" required aria-required="true" autocomplete="name" placeholder="Digite seu nome">
+                <span id="name-error" class="input-error-msg" role="alert" aria-live="polite"></span>
+              </div>
+
+              <div class="form-group">
+                <label for="contact-email">Seu E-mail Corporativo: <span class="required-mark" aria-hidden="true">*</span></label>
+                <input type="email" id="contact-email" class="form-input" required aria-required="true" autocomplete="email" placeholder="nome@suaempresa.com.br">
+                <span id="email-error" class="input-error-msg" role="alert" aria-live="polite"></span>
+              </div>
+
+              <div class="form-group">
+                <label for="contact-interest">Solução de Maior Interesse:</label>
+                <select id="contact-interest" class="form-input">
+                  <option value="erp">ERP Modular para Microempresas</option>
+                  <option value="contratos">Plataforma de Gestão de Contratos com IA</option>
+                  <option value="ponto">Sistema de Ponto & Presença Digital</option>
+                  <option value="acessibilidade">Consultoria em Acessibilidade Web (CID H54)</option>
+                  <option value="outro">Outro assunto</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="contact-message">Sua Mensagem: <span class="required-mark" aria-hidden="true">*</span></label>
+                <textarea id="contact-message" class="form-input form-textarea" rows="4" required aria-required="true" placeholder="Conte-nos sobre as necessidades da sua empresa..."></textarea>
+                <span id="message-error" class="input-error-msg" role="alert" aria-live="polite"></span>
+              </div>
+
+              <button type="submit" class="btn btn-primary btn-full" id="btn-submit-contact">
+                <span>✉️ Enviar Solicitação com Áudio-Confirmação</span>
+              </button>
+            </form>
+
+            <div id="contact-success-alert" class="success-alert hidden" role="status" aria-live="assertive">
+              <span class="success-icon" aria-hidden="true">✅</span>
+              <div>
+                <strong>Mensagem Enviada com Sucesso!</strong>
+                <p>Nossa equipe entrará em contato em breve através do e-mail informado.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- RODAPÉ COMPLETO E ACESSÍVEL -->
+  <footer class="site-footer" role="contentinfo">
+    <div class="container footer-grid">
+      <div class="footer-col footer-brand-col">
+        <div class="footer-logo">
+          <span class="logo-circle" aria-hidden="true"></span>
+          <span class="footer-brand-name">Ponto Digital</span>
+        </div>
+        <p class="footer-tagline">“Ponto Digital – Conectando você ao Futuro”</p>
+        <p class="footer-desc">
+          Empresa brasileira de desenvolvimento de softwares B2B focada em sustentabilidade (ODS 12) e inclusão digital irrestrita para pessoas com deficiência visual (CID H54).
+        </p>
+      </div>
+
+      <div class="footer-col">
+        <h4 class="footer-heading">Navegação Rápida</h4>
+        <ul class="footer-links">
+          <li><a href="#hero">Início</a></li>
+          <li><a href="#sobre">Sobre a Empresa</a></li>
+          <li><a href="#produtos-b2b">Produtos B2B</a></li>
+          <li><a href="#ods-sustentabilidade">Compromisso ODS 12</a></li>
+          <li><a href="#dinamicas-acessibilidade">Dinâmicas da Feira</a></li>
+          <li><a href="#equipe">Nossa Equipe</a></li>
+        </ul>
+      </div>
+
+      <div class="footer-col">
+        <h4 class="footer-heading">Recursos de Acessibilidade</h4>
+        <ul class="footer-links">
+          <li><a href="#accessibility-controls">Central de Acessibilidade</a></li>
+          <li><button class="footer-text-btn" id="footer-btn-shortcuts">Guia de Atalhos de Teclado</button></li>
+          <li><button class="footer-text-btn" id="footer-btn-speech">Ativar Narrador de Página</button></li>
+          <li><button class="footer-text-btn" id="footer-btn-contrast">Alternar Alto Contraste</button></li>
+        </ul>
+      </div>
+
+      <div class="footer-col">
+        <h4 class="footer-heading">Localização</h4>
+        <address class="footer-address">
+          Rua das Palmeiras, nº 1250, Sala 304<br>
+          Chácara Santo Antônio<br>
+          São Paulo / SP – CEP: 04719-999<br>
+          Brasil
+        </address>
+      </div>
+    </div>
+
+    <div class="footer-bottom">
+      <div class="container footer-bottom-flex">
+        <p>© 2026 Ponto Digital. Projeto Empresarial de Desenvolvimento de Sistemas. Todos os direitos reservados.</p>
+        <p class="wcag-statement">Projetado em conformidade com W3C WCAG 2.2 Nível AAA & eMAG.</p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- MODAL DE ATALHOS DE TECLADO ACESSÍVEL -->
+  <div id="shortcuts-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="modal-shortcuts-title">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h2 id="modal-shortcuts-title" class="modal-title">⌨️ Guia de Atalhos de Teclado & Acessibilidade</h2>
+        <button id="modal-close-btn" class="modal-close-btn" aria-label="Fechar guia de atalhos de teclado (Pressione Esc)">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-intro">
+          Este site foi programado para ser navegado 100% via teclado e leitor de tela. Utilize os atalhos abaixo a qualquer momento:
+        </p>
+
+        <table class="shortcuts-table" aria-label="Tabela de teclas de atalho">
+          <thead>
+            <tr>
+              <th scope="col">Atalho</th>
+              <th scope="col">Ação no Site</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><kbd>Alt</kbd> + <kbd>1</kbd></td>
+              <td>Focar na barra superior de acessibilidade</td>
+            </tr>
+            <tr>
+              <td><kbd>Alt</kbd> + <kbd>2</kbd></td>
+              <td>Pular direto para o conteúdo principal</td>
+            </tr>
+            <tr>
+              <td><kbd>Alt</kbd> + <kbd>3</kbd></td>
+              <td>Ir para o catálogo de produtos B2B</td>
+            </tr>
+            <tr>
+              <td><kbd>Alt</kbd> + <kbd>4</kbd></td>
+              <td>Ir para a área de dinâmicas da feira</td>
+            </tr>
+            <tr>
+              <td><kbd>Alt</kbd> + <kbd>5</kbd></td>
+              <td>Ir para o formulário de contato</td>
+            </tr>
+            <tr>
+              <td><kbd>Alt</kbd> + <kbd>V</kbd></td>
+              <td>Ligar ou desligar o leitor/narrador por voz</td>
+            </tr>
+            <tr>
+              <td><kbd>Alt</kbd> + <kbd>C</kbd></td>
+              <td>Alternar rapidamente modo de alto contraste</td>
+            </tr>
+            <tr>
+              <td><kbd>Alt</kbd> + <kbd>S</kbd></td>
+              <td>Ligar ou desligar os sons de navegação (earcons)</td>
+            </tr>
+            <tr>
+              <td><kbd>?</kbd> (Shift + /)</td>
+              <td>Abrir ou fechar este modal de atalhos</td>
+            </tr>
+            <tr>
+              <td><kbd>Esc</kbd></td>
+              <td>Fechar janelas modais e interromper fala</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="modal-footer">
+        <button id="modal-ok-btn" class="btn btn-primary">Entendido, Fechar Janela</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCRIPTS DO APLICATIVO -->
+  <script src="accessibility.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

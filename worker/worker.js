@@ -1,7 +1,7 @@
 /**
  * Cloudflare Worker: token temporário para uma sessão Live.
  * Configure GEMINI_API_KEY como segredo (wrangler secret put GEMINI_API_KEY).
- * SITE_ORIGIN deve ser a origem exata, exemplo https://vickmaspc.github.io.
+ * Aceita chamadas da própria origem do Worker e do domínio GitHub Pages em SITE_ORIGIN.
  * RATE_LIMIT é um binding Cloudflare Rate Limiting, obrigatório (fail closed).
  * Restrinja publicamente também por WAF/Turnstile e por cotas do projeto Google.
  */
@@ -20,7 +20,8 @@ function json(body, status, origin='') {
 export default {
   async fetch(request, env) {
     const origin = request.headers.get('Origin') || '';
-    if (!env.SITE_ORIGIN || origin !== env.SITE_ORIGIN) return json({error:'Origem não autorizada'}, 403);
+    const ownOrigin = new URL(request.url).origin;
+    if (!origin || (origin !== ownOrigin && origin !== env.SITE_ORIGIN)) return json({error:'Origem não autorizada'},403);
     if (request.method === 'OPTIONS') return new Response(null, {
       status:204,
       headers:{'Access-Control-Allow-Origin':origin,'Access-Control-Allow-Methods':'POST, OPTIONS','Access-Control-Allow-Headers':'Content-Type','Access-Control-Max-Age':'600'}

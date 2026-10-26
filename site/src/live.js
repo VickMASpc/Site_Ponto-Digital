@@ -61,7 +61,7 @@ export class LiveBridge {
   async connect(model,level) {
     if(this.connected) return;
     if(this.opening) return this.opening;
-    const endpoint=import.meta.env.VITE_TOKEN_ENDPOINT;
+    const endpoint=import.meta.env.VITE_TOKEN_ENDPOINT || (location.hostname.endsWith('.github.io') ? null : '/token');
     if(!endpoint) throw new Error('Conversa Live não configurada no servidor. O narrador local continua disponível.');
     const attempt=++this.sessionId;
     this.onState('connecting');

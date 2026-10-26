@@ -1,0 +1,25 @@
+name = "site-ponto-digital"
+main = "worker/worker.js"
+compatibility_date = "2026-10-26"
+
+# O mesmo Worker hospeda o build Vite (docs/) e o endpoint /token.
+# A opção run_worker_first impede que a rota da API caia na SPA.
+[assets]
+directory = "./docs"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/token"]
+
+# Origem adicional permitida para uso com GitHub Pages; a própria
+# URL workers.dev também é aceita automaticamente pelo Worker.
+[vars]
+SITE_ORIGIN = "https://vickmaspc.github.io"
+
+# Limite aproximado, por IP e por local da Cloudflare: não substitui
+# cotas de API, controles antiabuso ou proteção contra contas anônimas.
+[[ratelimits]]
+name = "RATE_LIMIT"
+namespace_id = "1001"
+[ratelimits.simple]
+limit = 6
+period = 60

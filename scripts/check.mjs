@@ -25,4 +25,10 @@ assert(main.includes("state.shortcut==='off'") && main.includes("event.altKey&&e
 assert(main.includes('TECNOLOGIA PARA EMPRESAS') && main.includes('Conheça nossas soluções'),'Home must lead with B2B');
 assert(styles.includes('--teal:#155bd4') && styles.includes('.business-art'), 'Blue company identity missing');
 assert(html.includes('lang="pt-BR"') && html.includes('href="#main"'), 'Language and skip link required');
-console.log('Syntax, corporate identity, navigation, accessibility entry, keyboard and token-origin checks passed.');
+const wrangler=readFileSync('wrangler.toml','utf8');
+assert(wrangler.includes('name = "site-ponto-digital"'),'Worker project name must match Cloudflare');
+assert(wrangler.includes('directory = "./docs"') && wrangler.includes('run_worker_first = ["/token"]'),'Worker assets and API route must be configured');
+assert(wrangler.includes('main = "worker/worker.js"'),'Worker entrypoint must be from repository root');
+const okOrigin=await worker.fetch(new Request('https://site-ponto-digital.example.workers.dev/token',{method:'POST',headers:{Origin:'https://site-ponto-digital.example.workers.dev','Content-Type':'application/json'},body:'{}'}),{SITE_ORIGIN:'https://vickmaspc.github.io'});
+assert.equal(okOrigin.status,503,'Worker should accept same-origin and reject if the API secret is unconfigured');
+console.log('Syntax, corporate identity, accessibility, Worker deployment config and token-origin checks passed.');

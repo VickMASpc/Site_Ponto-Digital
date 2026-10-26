@@ -8,7 +8,8 @@ Site institucional da Ponto Digital, com identidade visual **azul**, conteúdo B
 - `site/src/data.js` — conteúdo das páginas; compartilhado com as ferramentas do assistente.
 - `site/src/main.js` — interface, navegação, teclado J, TTS, configurações, demo.
 - `site/src/live.js` — WebSocket via SDK GenAI, áudio PCM bidirecional e function calling.
-- `worker/` — backend opcional de tokens temporários Cloudflare, necessário para ativar Live no site público.
+- `worker/` — backend de tokens temporários Cloudflare, executado em `/token` quando implantado no Worker.
+- `wrangler.toml` (raiz) — configuração para implantar a interface Vite e o endpoint `/token` **juntos no Worker `site-ponto-digital`** usando os comandos já configurados no painel.
 - `docs/` — **build gerado pelo Vite** (não editar manualmente).
 - `.github/workflows/build.yml` — instala dependências, roda verificações, compila e publica o build em `docs/`.
 
@@ -38,13 +39,13 @@ O build aparece em `docs/` e pode ser servido com `npm run preview`.
 
 **NUNCA** coloque uma chave de API em `site/`, `docs/`, variáveis `VITE_*` ou código-fonte público. Variáveis Vite fazem parte do bundle público.
 
-1. Crie um Cloudflare Worker a partir de `worker/`. É necessário configurar `GEMINI_API_KEY` como segredo privado (por exemplo: `npx wrangler secret put GEMINI_API_KEY --config worker/wrangler.toml`). **Se qualquer chave real foi compartilhada em chat, rotacione-a antes de usá-la.**
-2. Configure `SITE_ORIGIN` na configuração do Worker para `https://vickmaspc.github.io`. Adicione o binding Cloudflare **Rate Limiting**, revise limites/WAF e configure cotas de consumo no Google Cloud. O Worker falha fechado sem segredo ou limitador.
-3. Publique o Worker (por exemplo: `npx wrangler deploy --config worker/wrangler.toml`).
-4. Em **Settings → Secrets and variables → Actions → Variables**, configure `VITE_TOKEN_ENDPOINT` com a URL HTTPS pública terminada em `/token`. Ela não é secreta; o Worker emite tokens de sessão limitados.
-5. Execute a workflow `Vite build → docs` ou faça novo commit. O resultado fica no GitHub Pages.
+1. No Cloudflare, abra o Worker já criado chamado `site-ponto-digital`. **Não crie outro projeto.** A configuração correta agora está em `wrangler.toml` na raiz. Adicione `GEMINI_API_KEY` em **Settings → Variables and Secrets → Add → Secret**. **Se uma chave real foi compartilhada em chat, revogue-a e crie uma nova antes de usá-la.**
+2. O arquivo `wrangler.toml` já define o nome, os arquivos de `docs/`, a rota `/token`, o domínio de origem do GitHub Pages e o binding de limitação de sessões. Não coloque a chave em **Build Variables**; somente em **Variables and Secrets** do Worker, no tipo Secret. Restrinja uso por limites/cotas no Google Cloud e regras de abuso na Cloudflare.
+3. A integração com GitHub dispara a compilação e a implantação automaticamente após commits: **Build command** `npm run build`; **Deploy command** `npx wrangler deploy`; **Root directory** `/`. Não precisa abrir o editor de código do Worker.
+4. Na URL do **Cloudflare Worker** (em Domains), a interface chamará automaticamente o endpoint `/token` da mesma origem. Não é necessário criar `VITE_TOKEN_ENDPOINT` para essa hospedagem. Se quiser habilitar o Gemini também no **GitHub Pages**, configure a URL do Worker terminada em `/token` em GitHub → Settings → Secrets and variables → Actions → Variables → `VITE_TOKEN_ENDPOINT` e execute o build.
+5. Abra **Deployments**, confira a última implantação como Success, e abra a URL em **Domains**. O GitHub Pages continua funcionando separadamente.
 
-**Estado de implantação:** sem `VITE_TOKEN_ENDPOINT`, a interface e o TTS funcionam, mas o microfone informa que a sessão Live não está configurada. Isso é intencional para não vazar uma chave de produção.
+**Estado de implantação:** no GitHub Pages, sem `VITE_TOKEN_ENDPOINT` a leitura local funciona e a conversa informa que não está configurada; no Cloudflare Workers, a rota `/token` fica pronta depois de configurar `GEMINI_API_KEY`. Sem segredo, o Worker retorna erro 503 sem expor a chave.
 
 Tokens efêmeros são distribuídos somente depois da validação do Worker (origem permitida e limitação de frequência). Controle de origem **não** autentica visitantes nem substitui proteção antiabuso em produção.
 

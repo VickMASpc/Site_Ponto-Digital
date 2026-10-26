@@ -1,0 +1,35 @@
+name: Vite build → docs
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['docs/**']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Check source
+        run: npm run check
+      - name: Build into docs
+        env:
+          VITE_TOKEN_ENDPOINT: ${{ vars.VITE_TOKEN_ENDPOINT }}
+        run: npm run build
+      - name: Commit lockfile and compiled docs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f docs package-lock.json
+          if ! git diff --cached --quiet; then
+            git commit -m "build: atualizar docs via Vite [skip ci]"
+            git push
+          fi

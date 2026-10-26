@@ -1,0 +1,12 @@
+name = "ponto-digital-live-token"
+main = "worker.js"
+compatibility_date = "2026-10-20"
+# O acesso público exige configurar SITE_ORIGIN e GEMINI_API_KEY.
+[vars]
+SITE_ORIGIN = "https://vickmaspc.github.io"
+# Binding nativo de rate limiting Cloudflare (2 sessões por minuto por IP).
+[[unsafe.bindings]]
+name = "RATE_LIMIT"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 2, period = 60 }

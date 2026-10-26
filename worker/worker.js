@@ -7,21 +7,19 @@
  */
 const MODELS = new Set(['gemini-3.8-live', 'gemini-3.8-live-extended-thinking']);
 
-/** Nunca devolva a mensagem bruta do Google: ela pode conter dados da conta.
- * Devolva HTTP e razão (não secreta), mais uma ação útil para quem administra.
+/**
+ * Surface the *actual* validation reason safely. The previous 400 handler
+ * swallowed Google's error text and made a malformed body impossible to debug.
  */
 function explainGoogleError(status, reason, detail='') {
-  const code = String(reason||'').slice(0,48).replace(/[^A-Z0-9_]/gi,'');
-  const text = String(detail||'');
-  if (/leak|compromis|block/i.test(text)) return 'O Google bloqueou a chave exposta. Gere outra chave no AI Studio e substitua o Secret GEMINI_API_KEY no Cloudflare.';
-  if (status === 400) return 'O Google recusou os parâmetros do token (400). Verifique o acesso ao Live API e a configuração enviada.';
-  if (status === 401) return 'O Google não reconheceu a chave do Gemini (401). Confira o Secret GEMINI_API_KEY no Cloudflare.';
-  if (status === 402) return 'O projeto Gemini precisa de créditos ou configuração de cobrança (402). Verifique o AI Studio.';
-  if (status === 403) return 'O Google negou acesso à chave ou ao projeto (403). Verifique permissões, situação da chave e elegibilidade no AI Studio.';
-  if (status === 404) return 'O modelo ou a rota de emissão de tokens não está disponível para este projeto (404).';
-  if (status === 429) return 'O Google limitou as requisições ou esgotou a cota (429). Confira os limites no AI Studio.';
-  if (status >= 500) return 'O serviço Gemini falhou temporariamente (Google '+status+'). Tente novamente depois.';
-  return 'Não foi possível criar token Gemini. Google HTTP '+status+(code?' ('+code+')':'')+'.';
+  const code = String(reason||'').replace(/[^A-Z0-9_]/gi,'').slice(0,48);
+  const safe = String(detail||'')
+    .replace(/AIza[A-Za-z0-9_-]+/g,'[chave omitida]')
+    .replace(/AQ\.[A-Za-z0-9_.-]+/g,'[chave omitida]')
+    .replace(/(?:key|token|credential)=([^\s&]+)/gi,'$1=[omisso]')
+    .replace(/[\r\n]+/g,' ')
+    .slice(0,300);
+  return 'Gemini HTTP '+status+(code?' ('+code+')':'')+(safe?': '+safe:': solicitação recusada.');
 }
 
 function json(body, status, origin='') {
@@ -52,16 +50,11 @@ export default {
     let body;
     try { body = await request.json(); } catch { return json({error:'JSON inválido'},400,origin); }
     if (!MODELS.has(body.model)) return json({error:'Modelo indisponível'},400,origin);
-    const now=Date.now();
-    const payload = {
-      uses:1,
-      newSessionExpireTime:new Date(now+60_000).toISOString(),
-      expireTime:new Date(now+30*60_000).toISOString(),
-      liveConnectConstraints:{
-        model:'models/'+body.model,
-        config:{sessionResumption:{},responseModalities:['AUDIO']}
-      }
-    };
+    // Minimal body from Google's REST documentation for auth_tokens.create.
+    // Token defaults: 1 use, 1 minute to start, 30 minutes of lifetime.
+    // Previously we included liveConnectConstraints; the token server returned 400.
+    // The selected model and session options are sent on the Live WebSocket.
+    const payload = {uses:1};
     try {
       const response = await fetch('https://generativelanguage.googleapis.com/v1beta/auth_tokens', {
         method:'POST',
@@ -73,7 +66,7 @@ export default {
         try { const rejected=await response.json(); googleError=rejected?.error||{}; } catch {}
         const reason=String(googleError.status||'').replace(/[^A-Z0-9_]/gi,'').slice(0,48);
         const message=explainGoogleError(response.status,reason,googleError.message);
-        console.warn('Gemini token rejected', {httpStatus:response.status,reason,model:body.model});
+        console.warn('Gemini token rejected', {httpStatus:response.status,reason,model:body.model,message});
         return json({error:message,upstreamStatus:response.status,upstreamReason:reason},502,origin);
       }
       const token = await response.json();

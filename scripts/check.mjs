@@ -39,17 +39,15 @@ try {
     assert(String(url).includes('/v1beta/auth_tokens'));
     observedPayload=JSON.parse(options.body);
     assert.equal(options.headers['x-goog-api-key'],testEnv.GEMINI_API_KEY);
-    return new Response(JSON.stringify({error:{code:403,status:'PERMISSION_DENIED',message:'Key blocked for leaked credentials'}}),{status:403,headers:{'Content-Type':'application/json'}});
+    return new Response(JSON.stringify({error:{code:400,status:'INVALID_ARGUMENT',message:'Invalid JSON payload received. Unknown name "liveConnectConstraints".'}}),{status:400,headers:{'Content-Type':'application/json'}});
   };
   const diagnosticResponse=await worker.fetch(new Request('https://site-ponto-digital.example.workers.dev/token',{method:'POST',headers:{Origin:'https://site-ponto-digital.example.workers.dev','Content-Type':'application/json'},body:JSON.stringify({model:'gemini-3.8-live'})}),testEnv);
   assert.equal(diagnosticResponse.status,502,'Upstream non-200 must remain an error');
   const diagnosis=await diagnosticResponse.json();
-  assert.equal(diagnosis.upstreamStatus,403,'Preserve upstream HTTP for diagnosis');
-  assert.equal(diagnosis.upstreamReason,'PERMISSION_DENIED','Preserve non-secret reason');
-  assert(diagnosis.error.includes('bloqueou'),'Identify leaked/blocked key');
+  assert.equal(diagnosis.upstreamStatus,400,'Preserve upstream HTTP for diagnosis');
+  assert.equal(diagnosis.upstreamReason,'INVALID_ARGUMENT','Preserve the upstream reason');
+  assert(diagnosis.error.includes('Unknown name'),'Show the real validation failure');
   assert(!JSON.stringify(diagnosis).includes('synthetic-test-key'),'Never expose server key');
-  assert.equal(observedPayload.liveConnectConstraints.model,'models/gemini-3.8-live');
-  assert.deepEqual(observedPayload.liveConnectConstraints.config.responseModalities,['AUDIO']);
-  assert.deepEqual(observedPayload.liveConnectConstraints.config.sessionResumption,{});
+  assert.deepEqual(observedPayload,{uses:1},'Token issuance must use the minimal documented payload');
 } finally {globalThis.fetch=oldFetch;}
-console.log('Syntax, accessibility, Worker config, Google token payload, sanitized diagnostics and origin tests passed.');
+console.log('Syntax, accessibility, Worker config, minimal token body, sanitized 400 diagnostics and origin tests passed.');

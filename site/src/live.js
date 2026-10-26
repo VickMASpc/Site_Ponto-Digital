@@ -98,7 +98,7 @@ export class LiveBridge {
     try {await this.opening;}catch(e){this.onState('offline');throw e;}finally{this.opening=null;}
   }
   async initOutput() {
-    if (!this.outputContext) this.outputContext=new AudioContext({sampleRate:24000});
+    if (!this.outputContext) this.outputContext=new AudioContext();
     if(this.outputContext.state==='suspended') this.outputContext.resume().catch(()=>{});
   }
   playAudio(base64,mime='') {

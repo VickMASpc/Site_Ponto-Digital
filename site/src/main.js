@@ -212,7 +212,7 @@ function helpMarkup(){
  <p>${esc(introText())}</p>
  <div class="help-shortcuts"><div>${ico('keyboard',24)}<strong>Computador</strong><span>Tecla J · com saliência tátil</span></div><div>${ico('mic',24)}<strong>Celular</strong><span>Botão fixo · tocar para falar</span></div></div>
  <div class="help-buttons"><button class="btn btn-primary" data-action="intro">${ico('sound',19)} Ouvir instruções</button><button class="btn btn-secondary" data-action="close-overlay">Começar a explorar</button></div>
- <p class="help-footnote">O áudio automático pode ser bloqueado pelo navegador. Use “Ouvir instruções” se não escutou a apresentação.</p>
+ <p class="help-footnote">Ao ativar o microfone, o áudio é processado pela API Gemini. O áudio automático de instruções pode ser bloqueado pelo navegador; nesse caso, use “Ouvir instruções”.</p>
  </div>`;
 }
 function render() {

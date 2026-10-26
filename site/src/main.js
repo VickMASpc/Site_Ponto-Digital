@@ -48,7 +48,8 @@ const bridge=new LiveBridge({
  onState(value){state.status=value;syncLive();},
  onError(message){notify(message);},
  onText(who,text){addActivity(who,text);},
- onTool:executeTool
+ onTool:executeTool,
+ onAudio(){if(speaking)stopSpeech();}
 });
 function notify(text){
  state.notice=text;
@@ -74,6 +75,7 @@ function speak(text,{force=false}={}){
  if(!('speechSynthesis' in window)){notify('A leitura por voz não está disponível neste navegador.');return;}
  if(!state.tts&&!force)return;
  stopSpeech();
+ bridge.stopPlayback();
  const chunks=String(text).match(/[^.!?]+[.!?]+|[^.!?]+$/g)?.reduce((list,piece)=>{
    const words=piece.trim().split(/\s+/);
    while(words.length){list.push(words.splice(0,Math.min(35,words.length)).join(' '));}
@@ -227,7 +229,7 @@ function render() {
  <div class="voice-shell">
   <div class="voice-dock">
    <div class="voice-indicator"><span class="voice-status-dot" id="voice-dot" data-status="${state.status}"></span><div><strong id="voice-status">${statusText()}</strong><span id="mic-hint">${mobile?'Toque para conversar':state.micMode==='hold'?'Segure J para falar':'Pressione J para ligar ou desligar'}</span></div></div>
-   <div class="voice-controls"><button class="small-voice-button" data-action="read-page" title="Ouvir página" aria-label="Ler página atual">${ico('sound',21)}</button><button class="mic-main" id="mic-button" data-action="mic" data-active="${bridge.recording}" aria-pressed="${bridge.recording}" aria-label="${bridge.recording?'Parar de falar':'Ativar microfone'}">${ico('mic',25)}</button><button class="small-voice-button" data-action="activity" title="Ver conversa" aria-label="Abrir histórico da conversa">${ico('sparkle',21)}</button></div>
+   <div class="voice-controls"><button class="small-voice-button" data-action="read-page" title="Ouvir página" aria-label="Ler página atual">${ico('sound',21)}</button><button class="small-voice-button" data-action="stop-speech" title="Parar leitura" aria-label="Parar leitura">${ico('stop',18)}</button><button class="mic-main" id="mic-button" data-action="mic" data-active="${bridge.recording}" aria-pressed="${bridge.recording}" aria-label="${bridge.recording?'Parar de falar':'Ativar microfone'}">${ico('mic',25)}</button><button class="small-voice-button" data-action="activity" title="Ver conversa" aria-label="Abrir histórico da conversa">${ico('sparkle',21)}</button></div>
   </div>
   <div class="dock-subtext"><span id="tts-indicator"></span><span>Gemini Live · Leitura local disponível</span></div>
  </div>
@@ -295,11 +297,13 @@ async function executeTool(name,args){
  }
 }
 function setSetting(key,value){
+ const focusedId=document.activeElement?.id;
  if(['font','rate'].includes(key))value=Number(value);
  if(key==='tts')value=Boolean(value);
  if(key==='model' || key==='thinking')bridge.disconnect();
  if(key==='tts'&&!value)stopSpeech();
  state[key]=value;persist(key,value);render();
+ if(focusedId)document.getElementById(focusedId)?.focus();
  announce('Configuração alterada: '+key);
 }
 const app=$('app');

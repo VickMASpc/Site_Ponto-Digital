@@ -51,8 +51,8 @@ function decodePCM(base64) {
 }
 
 export class LiveBridge {
-  constructor({onState,onText,onTool,onError}) {
-    this.onState=onState; this.onText=onText; this.onTool=onTool; this.onError=onError;
+  constructor({onState,onText,onTool,onError,onAudio}) {
+    this.onState=onState; this.onText=onText; this.onTool=onTool; this.onError=onError; this.onAudio=onAudio;
     this.session=null; this.connected=false; this.recording=false;
     this.inputStream=null; this.inputContext=null; this.worklet=null; this.source=null;
     this.outputContext=null; this.nextPlayTime=0; this.scheduled=new Set();
@@ -99,7 +99,7 @@ export class LiveBridge {
   }
   async initOutput() {
     if (!this.outputContext) this.outputContext=new AudioContext({sampleRate:24000});
-    if(this.outputContext.state==='suspended') await this.outputContext.resume();
+    if(this.outputContext.state==='suspended') this.outputContext.resume().catch(()=>{});
   }
   playAudio(base64,mime='') {
     if (!base64 || !this.outputContext) return;
@@ -121,11 +121,14 @@ export class LiveBridge {
   }
   async processMessage(msg) {
     if(msg.serverContent?.interrupted) this.stopPlayback();
+    const interactionStatus=msg.interactionStatus||msg.serverContent?.interactionStatus;
+    if(interactionStatus==='IN_PROGRESS' && !this.recording) this.onState('busy');
+    if(interactionStatus==='IDLE') this.onState(this.recording?'listening':'ready');
     const content=msg.serverContent;
     if(content?.inputTranscription?.text) this.onText('Você',content.inputTranscription.text);
     if(content?.outputTranscription?.text) this.onText('Ponto',content.outputTranscription.text);
     if(content?.modelTurn?.parts) for(const part of content.modelTurn.parts) {
-      if(part.inlineData?.data && (part.inlineData.mimeType||'').startsWith('audio/')) this.playAudio(part.inlineData.data,part.inlineData.mimeType);
+      if(part.inlineData?.data && (part.inlineData.mimeType||'').startsWith('audio/')) {this.onAudio?.();this.playAudio(part.inlineData.data,part.inlineData.mimeType);}
     }
     if(msg.toolCall?.functionCalls?.length) {
       const responses=await Promise.all(msg.toolCall.functionCalls.map(async call=>{

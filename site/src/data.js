@@ -21,7 +21,8 @@ export const CONTENT = {
     sections: [
       { title: 'O que fazemos', body: 'Trabalhamos com a proposta de desenvolvimento e manutenção de software para empresas, incluindo soluções SaaS sob medida.' },
       { title: 'Nossa direção', body: 'Simplificar processos, melhorar o acesso à tecnologia e oferecer experiências utilizáveis por pessoas com diferentes necessidades.' },
-      { title: 'Onde estamos', body: 'Nossa proposta empresarial é sediada em São Paulo, Brasil, com intenção de oferecer serviços digitais também para clientes internacionais.' }
+      { title: 'Onde estamos', body: 'Nossa proposta empresarial é sediada em São Paulo, Brasil, com intenção de oferecer serviços digitais também para clientes internacionais.' },
+      { title: 'Equipe do projeto', body: 'Diego Alves: direção da empresa. Gabriel Oliveira: vendas e marketing. Jonathan Vrena: gerência. Matheus Morais: desenvolvimento e marketing. Victor Monteiro: desenvolvimento chefe. Yamil Josué: apoio ao desenvolvimento. Vinicius Ferreira: apoio à gerência e vendas.' }
     ]
   },
   solucoes: {
@@ -46,9 +47,10 @@ export const CONTENT = {
   },
   impacto: {
     title: 'Digitalizar também é escolher melhor.',
-    description: 'A Ponto Digital relaciona sua proposta à ODS 12 — Consumo e Produção Responsáveis — buscando reduzir a dependência de papel em processos empresariais.',
+    description: 'O planejamento da Ponto Digital destaca a ODS 8 — Trabalho Decente e Crescimento Econômico. A digitalização também se relaciona com a ODS 12, citada em uma versão do relatório do projeto.',
     sections: [
-      { title: 'ODS 12', body: 'Ao substituir processos de papel por fluxos digitais, empresas podem reduzir materiais físicos, retrabalho e necessidades de armazenamento.' },
+      { title: 'ODS 8 — trabalho e crescimento', body: 'Conforme o Kanban do projeto, a prioridade é a ODS 8: Trabalho Decente e Crescimento Econômico, relacionando tecnologia à melhoria das atividades empresariais.' },
+      { title: 'Digitalização e ODS 12', body: 'O relatório também menciona a ODS 12: Consumo e Produção Responsáveis. Substituir processos de papel por fluxos digitais pode reduzir materiais físicos, retrabalho e armazenamento.' },
       { title: 'Resultados dependem do contexto', body: 'Não apresentamos quantidades de árvores, água ou emissões supostamente economizadas sem metodologia e dados auditáveis.' },
       { title: 'Sustentabilidade digital', body: 'Sistemas bem projetados também devem reduzir consumo desnecessário de recursos e permanecer simples de utilizar e manter.' }
     ]

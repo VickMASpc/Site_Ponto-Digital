@@ -369,7 +369,7 @@ app.addEventListener('click',event=>{
  const read=event.target.closest('[data-read-section]');
  if(read){const section=CONTENT[state.page].sections[Number(read.dataset.readSection)];if(section)speak(section.title+'. '+section.body,{force:true});return;}
  const prompt=event.target.closest('[data-prompt]');
- if(prompt){state.activity=true;render();if(bridge.connected){try{bridge.sendText(prompt.dataset.prompt)}catch(e){notify(e.message)}}else{notify('Ative o microfone primeiro para conversar com o assistente.');}return;}
+ if(prompt){state.activity=true;render();bridge.connect(state.model,state.thinking).then(()=>bridge.sendText(prompt.dataset.prompt)).catch(e=>notify(e.message||'Não foi possível conectar ao Gemini.'));return;}
  const btn=event.target.closest('[data-action]');if(!btn)return;
  switch(btn.dataset.action){
   case 'menu':state.menu=!state.menu;render();break;
@@ -407,7 +407,8 @@ app.addEventListener('submit',event=>{
  if(event.target.id==='chat-form'){
    event.preventDefault();const value=$('chat-text')?.value.trim();
    if(!value)return;
-   try{bridge.sendText(value);$('chat-text').value='';}catch(e){notify(e.message);}
+   const input=$('chat-text');if(input)input.value='';
+   bridge.connect(state.model,state.thinking).then(()=>bridge.sendText(value)).catch(e=>{notify(e.message||'Não foi possível enviar a mensagem.'); const box=$('chat-text');if(box)box.value=value;});
  }
 });
 window.addEventListener('keydown',event=>{

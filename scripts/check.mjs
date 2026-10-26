@@ -31,4 +31,25 @@ assert(wrangler.includes('directory = "./docs"') && wrangler.includes('run_worke
 assert(wrangler.includes('main = "worker/worker.js"'),'Worker entrypoint must be from repository root');
 const okOrigin=await worker.fetch(new Request('https://site-ponto-digital.example.workers.dev/token',{method:'POST',headers:{Origin:'https://site-ponto-digital.example.workers.dev','Content-Type':'application/json'},body:'{}'}),{SITE_ORIGIN:'https://vickmaspc.github.io'});
 assert.equal(okOrigin.status,503,'Worker should accept same-origin and reject if the API secret is unconfigured');
-console.log('Syntax, corporate identity, accessibility, Worker deployment config and token-origin checks passed.');
+const oldFetch=globalThis.fetch;
+const testEnv={SITE_ORIGIN:'https://vickmaspc.github.io',GEMINI_API_KEY:'synthetic-test-key',RATE_LIMIT:{limit:async()=>({success:true})}};
+try {
+  let observedPayload;
+  globalThis.fetch=async (url,options)=>{
+    assert(String(url).includes('/v1beta/auth_tokens'));
+    observedPayload=JSON.parse(options.body);
+    assert.equal(options.headers['x-goog-api-key'],testEnv.GEMINI_API_KEY);
+    return new Response(JSON.stringify({error:{code:403,status:'PERMISSION_DENIED',message:'Key blocked for leaked credentials'}}),{status:403,headers:{'Content-Type':'application/json'}});
+  };
+  const diagnosticResponse=await worker.fetch(new Request('https://site-ponto-digital.example.workers.dev/token',{method:'POST',headers:{Origin:'https://site-ponto-digital.example.workers.dev','Content-Type':'application/json'},body:JSON.stringify({model:'gemini-3.8-live'})}),testEnv);
+  assert.equal(diagnosticResponse.status,502,'Upstream non-200 must remain an error');
+  const diagnosis=await diagnosticResponse.json();
+  assert.equal(diagnosis.upstreamStatus,403,'Preserve upstream HTTP for diagnosis');
+  assert.equal(diagnosis.upstreamReason,'PERMISSION_DENIED','Preserve non-secret reason');
+  assert(diagnosis.error.includes('bloqueou'),'Identify leaked/blocked key');
+  assert(!JSON.stringify(diagnosis).includes('synthetic-test-key'),'Never expose server key');
+  assert.equal(observedPayload.liveConnectConstraints.model,'models/gemini-3.8-live');
+  assert.deepEqual(observedPayload.liveConnectConstraints.config.responseModalities,['AUDIO']);
+  assert.deepEqual(observedPayload.liveConnectConstraints.config.sessionResumption,{});
+} finally {globalThis.fetch=oldFetch;}
+console.log('Syntax, accessibility, Worker config, Google token payload, sanitized diagnostics and origin tests passed.');

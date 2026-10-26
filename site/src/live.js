@@ -69,7 +69,10 @@ export class LiveBridge {
       const res=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model})});
       let payload={};
       try{payload=await res.json()}catch{}
-      if(!res.ok || !payload.token) throw new Error(payload.error || 'Não foi possível criar a sessão de voz.');
+      if(!res.ok || !payload.token) {
+        const errorText=typeof payload.error==='string'?payload.error:'Não foi possível criar a sessão de voz.';
+        throw new Error(errorText);
+      }
       const client=new GoogleGenAI({apiKey:payload.token,httpOptions:{apiVersion:'v1beta'}});
       await this.initOutput();
       if(attempt!==this.sessionId) return;

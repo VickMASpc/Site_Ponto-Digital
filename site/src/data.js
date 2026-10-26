@@ -8,8 +8,8 @@ export const NAV = [
 ];
 export const CONTENT = {
   inicio: {
-    title: 'Tecnologia que aproxima.',
-    description: 'A Ponto Digital desenvolve soluções digitais para empresas. Este site também é uma experiência interativa de acessibilidade: você pode navegar, ouvir e conversar com ele.',
+    title: 'Soluções digitais para empresas.',
+    description: 'A Ponto Digital desenvolve software B2B para ajudar empresas a organizar processos e trabalhar melhor. O site conta com recursos de leitura por voz e acessibilidade.',
     sections: [
       { title: 'Uma empresa pensada para o digital', body: 'Somos uma empresa brasileira de desenvolvimento de software B2B, com foco em soluções digitais para outras empresas.' },
       { title: 'Uma nova forma de acessar informação', body: 'Nosso assistente pode apresentar os serviços, mudar páginas, ler informações e configurar recursos de acessibilidade por comando de voz.' }

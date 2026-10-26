@@ -1,6 +1,6 @@
 # Ponto Digital — versão 2.0
 
-Reconstrução completa do site institucional acessível, com navegação por voz, leitura local e integração à API **Gemini 3.8 Live** / **Gemini 3.8 Live Extended Thinking**.
+Site institucional da Ponto Digital, com identidade visual **azul**, conteúdo B2B em primeiro plano e recursos complementares de navegação por voz, leitura local e integração à API **Gemini 3.8 Live** / **Gemini 3.8 Live Extended Thinking**.
 
 ## Estrutura
 
@@ -16,10 +16,10 @@ O `index.html` da raiz é somente compatibilidade: quem ainda estiver usando Git
 
 ## Uso e acessibilidade
 
-- O narrador local Web Speech funciona sem Gemini. O tutorial pode ser iniciado na página inicial ou pelo botão Guia de voz, caso o navegador bloqueie reprodução automática.
-- Em computadores, **J** ativa o microfone (segurar por padrão; alterável para alternância). Não interceptamos J dentro de formulários.
+- A primeira região da interface apresenta instruções claras e controles acessíveis: **Ouvir instruções**, **Ler a página atual** e **Conversar por voz (opcional)**. O narrador local funciona sem Gemini. O navegador pode bloquear a reprodução automática; o botão inicial permanece acessível por teclado e leitor de tela.
+- Em computadores, **J** ativa o microfone (segurar por padrão; alterável para alternância). **Alt + J** é um caminho alternativo; J isolado pode ser desativado nas preferências para evitar conflitos com tecnologias assistivas e entrada de fala. Controles com Tab/Enter sempre existem. Não interceptamos J isolado dentro de formulários ou botões.
 - Em dispositivos de toque, o botão de microfone fixo permite toque para ligar/desligar ou modo segurar.
-- Controles para tema, alto contraste, ampliação de letras, narrador local, modelo e nível de pensamento do Extended.
+- Controles para tema, alto contraste, ampliação de letras, narrador local, atalho J, modelo e nível de pensamento do Extended. A navegação por páginas posiciona foco no título, e diálogos mantêm foco interno e devolvem ao controle de origem.
 - Ferramentas reais: navigate_to, get_page_content, read_section, summarize_section, get_navigation_options, set_theme, set_font_scale, set_microphone_mode, set_narration_speed, get_accessibility_settings.
 - Modo laboratório de lançamentos financeiros fictícios e apenas em memória.
 
@@ -61,3 +61,11 @@ Referências:
 - https://ai.google.dev/gemini-api/docs/live-api/ephemeral-tokens
 - https://ai.google.dev/gemini-api/docs/models/gemini-3.8-live
 - https://ai.google.dev/gemini-api/docs/models/gemini-3.8-live-extended-thinking
+
+## Design e acessibilidade como requisitos
+
+A identidade corporativa é azul. A home comunica a atividade principal (software B2B); a assistência por voz é um recurso adicional, não o tema da página.
+
+Todos os recursos principais devem funcionar com teclado e leitor de tela mesmo sem conexão com o Gemini. A página inicial contém orientações acessíveis logo no início e um controle de leitura local. A navegação usa landmarks semânticos, headings e foco de página. A tecla J pode ser desativada (WCAG 2.2 SC 2.1.4), permanecendo Alt + J e os botões nomeados.
+
+**Validação pendente:** testar com pessoas cegas e leitores de tela reais (NVDA/Firefox e Chrome, TalkBack/Android e VoiceOver/iOS). Os checks do GitHub não substituem esses testes nem comprovam certificação WCAG.

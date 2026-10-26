@@ -30,11 +30,13 @@ const icons={
 const ico=(name,size=20)=>`<svg class="ico" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]||icons.sparkle}</svg>`;
 const esc=(s)=>String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const mobile=matchMedia('(pointer: coarse)').matches;
+let previousDialogFocus=null;
+let ignoreMicClick=false;
 const load=(key,fallback)=>{try{const x=localStorage.getItem('pd.'+key);return x==null?fallback:JSON.parse(x);}catch{return fallback;}};
 const state={
  page: CONTENT[location.hash.replace('#','')]?location.hash.slice(1):'inicio',
  theme:load('theme','light'),font:load('font',1),micMode:load('micMode',mobile?'toggle':'hold'),
- tts:load('tts',true),rate:load('rate',1),model:load('model','gemini-3.8-live'),
+ tts:load('tts',true),rate:load('rate',1),shortcut:load('shortcut','j'),model:load('model','gemini-3.8-live'),
  thinking:load('thinking','medium'),settings:false,help:false,menu:false,activity:false,
  status:'offline',transcript:[],demo:[],notice:'',intro:true
 };
@@ -63,8 +65,8 @@ function applyPrefs() {
 }
 function introText() {
  return mobile
- ? 'Bem-vindo à Ponto Digital. Este site pode ser ouvido e também pode conversar com você. No celular, o botão de microfone fica fixo na parte inferior da tela. Toque uma vez para começar a falar e toque novamente para parar. Você pode pedir: leia esta página, vá para soluções, ou aumente as letras. Há também configurações de contraste e tamanho do texto.'
- : 'Bem-vindo à Ponto Digital. Este site pode ser ouvido e também conversa com você. No teclado do computador, localize a tecla J, que tem uma pequena saliência tátil. Segure J para falar e solte quando terminar. Você pode mudar esse comportamento nas configurações. Peça para ler a página, acessar serviços, aumentar letras ou mudar o contraste. Todas as opções também podem ser acessadas por teclado.';
+ ? 'Bem-vindo à Ponto Digital, empresa de desenvolvimento de software para negócios. Você pode navegar com gestos do leitor de tela e ativar botões com toque duplo. A primeira opção da página é ouvir este guia. O botão de microfone se chama Ativar microfone e permite conversar quando a conexão estiver disponível. Um toque liga e outro desliga. Todas as páginas também podem ser lidas sem Gemini.'
+ : 'Bem-vindo à Ponto Digital, empresa de desenvolvimento de software para negócios. Para navegar, use Tab até os links e Enter para abrir. O primeiro botão da página permite ouvir estas orientações novamente. A tecla J, marcada por uma saliência tátil, ativa a conversa por voz; Alt mais J é uma alternativa. Use o botão de microfone se seu leitor de tela interceptar J. Também é possível ler páginas sem Gemini e ajustar contraste e texto nas preferências.';
 }
 function stopSpeech(){
  ++speechVersion;speaking=false;speechQueue=[];
@@ -119,6 +121,8 @@ function syncLive() {
    btn.dataset.active=bridge.recording?'true':'false';
  }
  const desc=$('mic-hint');if(desc)desc.textContent=bridge.recording?'Microfone ativo. Fale agora.':(mobile?'Toque para conversar':state.micMode==='hold'?'Segure J para falar':'Pressione J para ligar ou desligar');
+ const talk=document.querySelector('.access-talk');
+ if(talk){talk.setAttribute('aria-pressed',bridge.recording?'true':'false');talk.textContent=bridge.recording?'Parar microfone':'Conversar por voz (opcional)';}
  const disconnect=$('disconnect');if(disconnect)disconnect.hidden=!bridge.connected;
 }
 function navItems(){
@@ -133,42 +137,58 @@ function sectionHTML(items) {
 function pageMarkup() {
  const p=CONTENT[state.page];
  if(state.page==='inicio') return `
-   <section class="hero" aria-labelledby="main-heading">
-     <div class="hero-inner">
-       <div class="hero-copy">
-         <div class="eyebrow"><span class="signal-mark"></span> EXPERIÊNCIA DIGITAL ACESSÍVEL <span class="eyebrow-line"></span> 2026</div>
-         <h1 id="main-heading">Tecnologia que <em>aproxima.</em></h1>
-         <p class="hero-lead">Uma empresa de software. Um site que conversa com você. Descubra uma nova maneira de navegar na internet.</p>
-         <div class="hero-actions"><button data-nav="empresa" class="btn btn-primary">Conheça a Ponto Digital ${ico('arrow',19)}</button><button class="btn btn-secondary" data-action="intro">${ico('sound',20)} Ouvir apresentação</button></div>
-         <div class="hero-caption"><span class="caption-dot"></span> Navegação por voz, teclado ou toque. Você escolhe.</div>
-       </div>
-       <div class="hero-art" aria-label="Ilustração abstrata da interação por voz">
-         <div class="orbit orbit-a"></div><div class="orbit orbit-b"></div><div class="orbit orbit-c"></div>
-         <div class="orb-spot top"></div><div class="orb-spot bottom"></div>
-         <div class="core-circle"><div class="core-ring"><div class="core-bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div></div>
-         <div class="art-callout callout-top"><span class="mini-led"></span> O site escuta</div>
-         <div class="art-callout callout-bottom">${ico('sparkle',16)} E responde</div>
-         <div class="art-label">INTERFACE / VOZ / INCLUSÃO</div>
-       </div>
-     </div>
-   </section>
-   <section class="intro-strip" aria-label="Três pilares da Ponto Digital">
-     <div><span>01 —</span><strong>Soluções empresariais</strong><p>Software desenvolvido para negócios.</p></div>
-     <div><span>02 —</span><strong>Design inclusivo</strong><p>Acesso para diferentes necessidades.</p></div>
-     <div><span>03 —</span><strong>Assistência por voz</strong><p>Uma conversa em vez de um manual.</p></div>
-   </section>
-   <section class="home-section"><div class="section-heading"><span class="section-kicker">EXPERIMENTE AGORA</span><h2>Não precisa procurar.<br><em>É só perguntar.</em></h2><p>O assistente conhece as páginas e pode ajudar a navegar de verdade, com ferramentas conectadas à interface.</p></div>
-   <div class="prompt-grid">
-     <button class="prompt-card" data-prompt="Me apresente a Ponto Digital.">${ico('sound',24)}<strong>“Me apresente a empresa.”</strong><span>Descubra quem somos ${ico('chevron',18)}</span></button>
-     <button class="prompt-card" data-prompt="Vá para soluções e me explique o que a empresa faz.">${ico('layers',24)}<strong>“Quais são as soluções?”</strong><span>Navegue e conheça ${ico('chevron',18)}</span></button>
-     <button class="prompt-card" data-prompt="Ative alto contraste e aumente a fonte.">${ico('heart',24)}<strong>“Aumente as letras.”</strong><span>Personalize o acesso ${ico('chevron',18)}</span></button>
-   </div></section>
-   <section class="featured-section"><div><span class="section-kicker">NOSSO PROPÓSITO</span><h2>O futuro só faz sentido quando <em>inclui.</em></h2><p>Projetamos experiências acessíveis sem abrir mão de uma identidade clara e de tecnologia útil.</p><button class="inline-arrow" data-nav="acessibilidade">Entenda nossos recursos ${ico('arrow',20)}</button></div><div class="featured-graphic">${ico('globe',80)}<span>TECNOLOGIA<br>PARA PESSOAS</span></div></section>
+  <section class="hero" aria-labelledby="main-heading">
+    <div class="hero-inner">
+      <div class="hero-copy">
+        <div class="eyebrow"><span class="signal-mark" aria-hidden="true"></span> TECNOLOGIA PARA EMPRESAS <span class="eyebrow-line" aria-hidden="true"></span> PONTO DIGITAL</div>
+        <h1 id="main-heading" tabindex="-1">Sua empresa mais <em>digital.</em> Seu trabalho mais simples.</h1>
+        <p class="hero-lead">Criamos soluções em software para ajudar empresas a organizar processos, reduzir tarefas repetitivas e trabalhar melhor.</p>
+        <div class="hero-actions">
+          <button data-nav="solucoes" class="btn btn-primary">Conheça nossas soluções ${ico('arrow',19)}</button>
+          <button data-nav="empresa" class="btn btn-secondary">Sobre a Ponto Digital</button>
+        </div>
+        <p class="hero-caption"><span class="caption-dot" aria-hidden="true"></span> Desenvolvimento B2B · Software sob medida · Brasil</p>
+      </div>
+      <div class="business-art" aria-hidden="true">
+        <div class="art-grid"></div>
+        <div class="business-window">
+          <div class="window-top"><span class="window-brand">ponto<span>.</span></span><div class="window-dots"><i></i><i></i><i></i></div></div>
+          <div class="window-body">
+            <div class="window-sidebar"><i></i><i></i><i></i><i></i></div>
+            <div class="window-content"><div class="window-caption"></div><div class="window-title"></div><div class="window-stats"><div><i></i><strong></strong><span></span></div><div><i></i><strong></strong><span></span></div></div><div class="window-chart"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div></div>
+          </div>
+        </div>
+        <div class="business-sticker sticker-one">${ico('shield',21)} Software para negócios</div>
+        <div class="business-sticker sticker-two">${ico('check',21)} Processos mais eficientes</div>
+      </div>
+    </div>
+  </section>
+  <section class="intro-strip" aria-label="Áreas de atuação">
+    <div><span>01 —</span><strong>Desenvolvimento B2B</strong><p>Aplicações para atender desafios de empresas.</p></div>
+    <div><span>02 —</span><strong>Soluções digitais</strong><p>Mais organização para processos do dia a dia.</p></div>
+    <div><span>03 —</span><strong>Inclusão de verdade</strong><p>Navegação acessível para diferentes pessoas.</p></div>
+  </section>
+  <section class="home-section" aria-labelledby="home-services-heading">
+    <div class="section-heading"><span class="section-kicker">O QUE FAZEMOS</span><h2 id="home-services-heading">Tecnologia para <em>resolver.</em></h2><p>Nosso foco é o desenvolvimento de software empresarial. Estes são os caminhos que orientam nossas propostas.</p></div>
+    <div class="prompt-grid">
+      <button class="prompt-card" data-nav="solucoes">${ico('layers',24)}<strong>Desenvolvimento de software</strong><span>Conheça a área de atuação ${ico('chevron',18)}</span></button>
+      <button class="prompt-card" data-nav="solucoes">${ico('globe',24)}<strong>Soluções SaaS para empresas</strong><span>Veja os conceitos estudados ${ico('chevron',18)}</span></button>
+      <button class="prompt-card" data-nav="laboratorio">${ico('shield',24)}<strong>Protótipos e demonstrações</strong><span>Experimente o projeto ${ico('chevron',18)}</span></button>
+    </div>
+  </section>
+  <section class="featured-section">
+    <div><span class="section-kicker">NOSSA VISÃO</span><h2>Mais do que criar sistemas, queremos <em>abrir caminhos.</em></h2><p>Uma empresa que trabalha com tecnologia também precisa pensar em quem a utiliza. Acessibilidade é parte da experiência, não seu único produto.</p><button class="inline-arrow" data-nav="empresa">Conheça nossa empresa ${ico('arrow',20)}</button></div>
+    <div class="featured-graphic" aria-hidden="true">${ico('globe',80)}<span>SOFTWARE B2B / FEITO PARA PESSOAS</span></div>
+  </section>
+  <section class="support-section" aria-labelledby="support-heading">
+    <div><span class="section-kicker">ACESSIBILIDADE DO SITE</span><h2 id="support-heading">Prefere ouvir? Estamos aqui.</h2><p>Use teclado, toque, leitor de tela ou o narrador do navegador. Você pode ativar a conversa por voz, se estiver disponível, sem depender dela para navegar.</p></div>
+    <div class="support-actions"><button class="btn btn-secondary" data-action="intro">${ico('sound',19)} Ouvir como usar</button><button class="btn btn-secondary" data-action="settings">${ico('cog',19)} Configurar acessibilidade</button></div>
+  </section>
  `;
  return `
   <section class="page-hero">
    <div class="page-hero-left"><div class="eyebrow"><span class="signal-mark"></span> PONTO DIGITAL / ${esc(state.page.toUpperCase())}</div>
-    <h1 id="main-heading">${esc(p.title)}</h1><p>${esc(p.description)}</p>
+    <h1 id="main-heading" tabindex="-1">${esc(p.title)}</h1><p>${esc(p.description)}</p>
     <div class="page-hero-actions"><button class="btn btn-primary" data-action="read-page">${ico('sound',18)} Ouvir página</button><button class="btn btn-secondary" data-action="settings">${ico('cog',18)} Ajustar leitura</button></div>
    </div>
    <div class="page-hero-mark">${ico(({empresa:'globe',solucoes:'layers',acessibilidade:'heart',impacto:'leaf',laboratorio:'sparkle'})[state.page],112)}</div>
@@ -196,7 +216,8 @@ function settingsMarkup() {
   <div class="panel-head"><div><span class="section-kicker">PREFERÊNCIAS</span><h2>Seu jeito de navegar.</h2></div><button class="icon-button" data-action="close-overlay" aria-label="Fechar configurações">${ico('x')}</button></div>
   <div class="setting-group"><h3>Visual</h3><label for="theme-select">Tema do site</label><select id="theme-select" data-setting="theme"><option value="light" ${state.theme==='light'?'selected':''}>Claro</option><option value="dark" ${state.theme==='dark'?'selected':''}>Escuro</option><option value="contrast" ${state.theme==='contrast'?'selected':''}>Alto contraste</option></select>
   <label for="font-select">Tamanho do texto</label><select id="font-select" data-setting="font"><option value="1" ${state.font==1?'selected':''}>Padrão (100%)</option><option value="1.18" ${state.font==1.18?'selected':''}>Grande (118%)</option><option value="1.36" ${state.font==1.36?'selected':''}>Muito grande (136%)</option><option value="1.55" ${state.font==1.55?'selected':''}>Máximo (155%)</option></select></div>
-  <div class="setting-group"><h3>Microfone</h3><label for="mic-select">Como ativar</label><select id="mic-select" data-setting="micMode"><option value="toggle" ${state.micMode==='toggle'?'selected':''}>Alternar: um toque liga, outro desliga</option><option value="hold" ${state.micMode==='hold'?'selected':''}>Segurar para falar</option></select><p class="setting-note">No computador, a tecla J é o atalho; no celular, use o botão fixo.</p></div>
+  <div class="setting-group"><h3>Microfone</h3><label for="mic-select">Como ativar</label><select id="mic-select" data-setting="micMode"><option value="toggle" ${state.micMode==='toggle'?'selected':''}>Alternar: um toque liga, outro desliga</option><option value="hold" ${state.micMode==='hold'?'selected':''}>Segurar para falar</option></select><p class="setting-note">J possui uma saliência tátil no teclado. Alt + J funciona como alternativa para tecnologias assistivas. Todos os controles também funcionam com Tab e Enter.</p>
+  <label for="shortcut-select">Atalho de uma letra</label><select id="shortcut-select" data-setting="shortcut"><option value="j" ${state.shortcut==='j'?'selected':''}>J habilitado</option><option value="off" ${state.shortcut==='off'?'selected':''}>Desativar J isolado (manter Alt + J)</option></select></div>
   <div class="setting-group"><h3>Assistente Gemini</h3><label for="model-select">Modelo de voz</label><select id="model-select" data-setting="model"><option value="gemini-3.8-live" ${state.model==='gemini-3.8-live'?'selected':''}>Gemini 3.8 Live · rápido</option><option value="gemini-3.8-live-extended-thinking" ${state.model.includes('extended')?'selected':''}>Gemini 3.8 Live · Extended Thinking</option></select>
   ${state.model.includes('extended')? `<label for="think-select">Raciocínio avançado</label><select id="think-select" data-setting="thinking"><option value="low" ${state.thinking==='low'?'selected':''}>Baixo</option><option value="medium" ${state.thinking==='medium'?'selected':''}>Médio</option><option value="high" ${state.thinking==='high'?'selected':''}>Alto</option></select>`:''}
   <p class="setting-note">Alterar o modelo desconecta a sessão atual. Conecte novamente usando o microfone.</p></div>
@@ -208,18 +229,25 @@ function helpMarkup(){
  return `<div class="scrim" data-action="close-overlay"></div><div class="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-title">
  <button class="icon-button help-close" data-action="close-overlay" aria-label="Fechar instruções">${ico('x')}</button>
  <div class="help-icon">${ico('headphones',33)}</div><span class="section-kicker">GUIA DE PRIMEIRO ACESSO</span>
- <h2 id="help-title">A internet também pode ser uma conversa.</h2>
+ <h2 id="help-title">Como navegar neste site.</h2>
  <p>${esc(introText())}</p>
- <div class="help-shortcuts"><div>${ico('keyboard',24)}<strong>Computador</strong><span>Tecla J · com saliência tátil</span></div><div>${ico('mic',24)}<strong>Celular</strong><span>Botão fixo · tocar para falar</span></div></div>
+ <div class="help-shortcuts"><div>${ico('keyboard',24)}<strong>Computador</strong><span>Tab e Enter · J ou Alt + J para conversar</span></div><div>${ico('mic',24)}<strong>Celular</strong><span>Leitor de tela · toque duplo nos botões</span></div></div>
  <div class="help-buttons"><button class="btn btn-primary" data-action="intro">${ico('sound',19)} Ouvir instruções</button><button class="btn btn-secondary" data-action="close-overlay">Começar a explorar</button></div>
  <p class="help-footnote">Ao ativar o microfone, o áudio é processado pela API Gemini. O áudio automático de instruções pode ser bloqueado pelo navegador; nesse caso, use “Ouvir instruções”.</p>
  </div>`;
 }
 function render() {
  applyPrefs();
+ document.title=(NAV.find(x=>x.id===state.page)?.label||'Início')+' | Ponto Digital';
  $('app').innerHTML=`
+ <div class="access-start" role="region" aria-label="Orientações de acessibilidade">
+  <div class="access-start-inner">
+   <p><strong>Bem-vindo à Ponto Digital.</strong> Este site funciona com leitor de tela, teclado e toque.</p>
+   <div class="access-start-actions"><button class="access-guide" data-action="intro">${ico('sound',19)} Ouvir instruções de navegação</button><button class="access-read" data-action="read-page">Ler a página atual</button><button class="access-talk" data-action="mic" aria-pressed="false">Conversar por voz (opcional)</button></div>
+  </div>
+ </div>
  <header class="site-header"><div class="header-inner">
-  <a href="#inicio" data-nav="inicio" class="brand" aria-label="Ponto Digital, voltar ao início"><span class="brand-symbol"><span></span><span></span><span></span></span><strong>PONTO<span>DIGITAL</span><small>SOFTWARE & INCLUSÃO</small></strong></a>
+  <a href="#inicio" data-nav="inicio" class="brand" aria-label="Ponto Digital, voltar ao início"><span class="brand-symbol" aria-hidden="true"><span></span><span></span><span></span></span><strong>PONTO<span>DIGITAL</span><small>SOLUÇÕES EM SOFTWARE</small></strong></a>
   <nav class="desktop-nav" aria-label="Navegação principal">${navItems()}</nav>
   <div class="header-actions"><button class="icon-button settings-trigger" data-action="settings" aria-label="Abrir preferências de acessibilidade">${ico('cog',21)}</button><button class="header-voice" data-action="help">${ico('headphones',19)} Guia de voz</button><button class="icon-button mobile-toggle" data-action="menu" aria-label="Abrir menu de navegação" aria-expanded="${state.menu}">${ico(state.menu?'x':'menu',24)}</button></div>
  </div>${state.menu?`<nav class="mobile-nav" aria-label="Navegação móvel">${navItems()}</nav>`:''}</header>
@@ -227,13 +255,13 @@ function render() {
  <main id="main" tabindex="-1">${pageMarkup()}</main>
  <footer class="site-footer"><div class="footer-top"><div class="footer-brand"><span class="footer-logo">PD<span>.</span></span><h2>Conectando pessoas ao futuro.</h2><p>Desenvolvimento de software B2B com um olhar para acessibilidade e inclusão.</p></div><div class="footer-links"><strong>NAVEGUE</strong>${NAV.map(x=>`<a href="#${x.id}" data-nav="${x.id}">${x.label}</a>`).join('')}</div><div class="footer-links"><strong>EXPERIÊNCIA</strong><button data-action="settings">Acessibilidade</button><button data-action="help">Ajuda e atalhos</button><button data-action="read-page">Ouvir página atual</button></div></div><div class="footer-bottom"><span>© 2026 Ponto Digital · Projeto acadêmico de Desenvolvimento de Sistemas</span><span>Feito para ser acessível, não apenas bonito.</span></div></footer>
  <div class="voice-shell">
-  <div class="voice-dock">
-   <div class="voice-indicator"><span class="voice-status-dot" id="voice-dot" data-status="${state.status}"></span><div><strong id="voice-status">${statusText()}</strong><span id="mic-hint">${mobile?'Toque para conversar':state.micMode==='hold'?'Segure J para falar':'Pressione J para ligar ou desligar'}</span></div></div>
+  <div class="voice-dock" role="group" aria-label="Controles de leitura e conversa por voz">
+   <div class="voice-indicator"><span class="voice-status-dot" id="voice-dot" data-status="${state.status}"></span><div><strong id="voice-status" role="status" aria-live="polite" aria-atomic="true">${statusText()}</strong><span id="mic-hint">${mobile?'Toque para conversar':state.micMode==='hold'?'Segure J para falar':'Pressione J para ligar ou desligar'}</span></div></div>
    <div class="voice-controls"><button class="small-voice-button" data-action="read-page" title="Ouvir página" aria-label="Ler página atual">${ico('sound',21)}</button><button class="small-voice-button" data-action="stop-speech" title="Parar leitura" aria-label="Parar leitura">${ico('stop',18)}</button><button class="mic-main" id="mic-button" data-action="mic" data-active="${bridge.recording}" aria-pressed="${bridge.recording}" aria-label="${bridge.recording?'Parar de falar':'Ativar microfone'}">${ico('mic',25)}</button><button class="small-voice-button" data-action="activity" title="Ver conversa" aria-label="Abrir histórico da conversa">${ico('sparkle',21)}</button></div>
   </div>
-  <div class="dock-subtext"><span id="tts-indicator"></span><span>Gemini Live · Leitura local disponível</span></div>
+  <div class="dock-subtext"><span id="tts-indicator"></span><span>Leitura local sem conexão</span></div>
  </div>
- ${state.activity?`<section class="activity-panel" aria-label="Conversa do assistente"><div class="activity-head"><div><span class="section-kicker">INTERAÇÃO POR VOZ</span><h2>Conversa</h2></div><button class="icon-button" data-action="activity" aria-label="Fechar conversa">${ico('x')}</button></div><div id="activity-list" class="activity-list" role="log" aria-live="polite">${activityMarkup()}</div><form id="chat-form" class="chat-form"><label for="chat-text" class="sr-only">Digite uma mensagem para o assistente</label><input id="chat-text" maxlength="600" placeholder="Ou digite sua pergunta…" autocomplete="off" required><button type="submit" aria-label="Enviar mensagem">${ico('arrow',21)}</button></form><button class="quiet-button" id="disconnect" data-action="disconnect" ${bridge.connected?'':'hidden'}>Encerrar sessão de voz</button></section>`:''}
+ ${state.activity?`<section class="activity-panel" aria-label="Conversa do assistente"><div class="activity-head"><div><span class="section-kicker">RECURSO OPCIONAL</span><h2>Conversa por voz</h2></div><button class="icon-button" data-action="activity" aria-label="Fechar conversa">${ico('x')}</button></div><div id="activity-list" class="activity-list" role="log" aria-live="polite">${activityMarkup()}</div><form id="chat-form" class="chat-form"><label for="chat-text" class="sr-only">Digite uma mensagem para o assistente</label><input id="chat-text" maxlength="600" placeholder="Ou digite sua pergunta…" autocomplete="off" required><button type="submit" aria-label="Enviar mensagem">${ico('arrow',21)}</button></form><button class="quiet-button" id="disconnect" data-action="disconnect" ${bridge.connected?'':'hidden'}>Encerrar sessão de voz</button></section>`:''}
  ${state.settings?settingsMarkup():''}
  ${state.help?helpMarkup():''}
  <div class="sr-only" role="status" aria-live="polite" id="screen-announcement"></div>
@@ -241,11 +269,13 @@ function render() {
  syncLive();
 }
 function announce(text){const e=$('screen-announcement');if(e){e.textContent='';requestAnimationFrame(()=>{if(e)e.textContent=text;});}}
-function navigate(id){
+function navigate(id,{historyMode='push'}={}){
  if(!CONTENT[id]){notify('Esta página não existe.');return false;}
  state.page=id;state.menu=false;state.help=false;state.settings=false;
- history.replaceState(null,'','#'+id);render();window.scrollTo({top:0,behavior:'instant'});
- $('main-heading')?.focus?.();$('main')?.focus();announce('Página '+NAV.find(x=>x.id===id)?.label+'. '+CONTENT[id].title);
+ if(historyMode==='push' && location.hash!==('#'+id))history.pushState({page:id},'','#'+id);
+ render();window.scrollTo({top:0,behavior:'instant'});
+ const heading=$('main-heading');if(heading)heading.focus({preventScroll:true});
+ announce('Página '+NAV.find(x=>x.id===id)?.label+'. '+CONTENT[id].title);
  return true;
 }
 async function beginMicrophone(isHold=false){
@@ -253,7 +283,7 @@ async function beginMicrophone(isHold=false){
  stopSpeech();
  try {
    await bridge.connect(state.model,state.thinking);
-   if(isHold&&!holdRequested){notify('Conectado. Segure J novamente para falar.');return;}
+   if(isHold&&!holdRequested){speak('Conexão pronta. Segure a tecla J novamente para falar.',{force:true});return;}
    await bridge.startMicrophone();
  } catch(e){notify(e.message||'Não foi possível ativar o microfone.');}
 }
@@ -292,9 +322,27 @@ async function executeTool(name,args){
     const rate=Number(args.rate);if(!Number.isFinite(rate))return {error:'Taxa inválida'};
     state.rate=Math.max(.7,Math.min(1.4,rate));persist('rate',state.rate);render();return {success:true,localNarratorSpeed:state.rate,note:'Ajusta TTS do navegador, não a voz nativa do Gemini.'};
   }
-  case 'get_accessibility_settings':return {theme:state.theme,font:state.font,microphoneMode:state.micMode,localSpeechEnabled:state.tts,localSpeechRate:state.rate,model:state.model};
+  case 'get_accessibility_settings':return {theme:state.theme,font:state.font,microphoneMode:state.micMode,keyboardShortcut:state.shortcut,localSpeechEnabled:state.tts,localSpeechRate:state.rate,model:state.model};
   default:return {error:'Ferramenta não autorizada'};
  }
+}
+function openDialog(kind,trigger){
+ previousDialogFocus=trigger?.getAttribute('data-action')||'settings';
+ state.help=kind==='help';state.settings=kind==='settings';render();
+ const focusTarget=kind==='settings'?document.querySelector('.side-panel .icon-button'):document.querySelector('.help-close');
+ focusTarget?.focus();
+ document.getElementById('main')?.setAttribute('inert','');
+ document.querySelector('.site-header')?.setAttribute('inert','');
+ document.querySelector('.access-start')?.setAttribute('inert','');
+ document.querySelector('.voice-shell')?.setAttribute('inert','');
+ document.querySelector('.site-footer')?.setAttribute('inert','');
+ document.querySelector('.activity-panel')?.setAttribute('inert','');
+}
+function closeDialog(){
+ const restore=previousDialogFocus;
+ state.help=false;state.settings=false;render();
+ const selector=restore==='help'?'[data-action="help"]':restore==='settings'?'[data-action="settings"]':'[data-action="intro"]';
+ document.querySelector(selector)?.focus();
 }
 function setSetting(key,value){
  const focusedId=document.activeElement?.id;
@@ -304,6 +352,14 @@ function setSetting(key,value){
  if(key==='tts'&&!value)stopSpeech();
  state[key]=value;persist(key,value);render();
  if(focusedId)document.getElementById(focusedId)?.focus();
+ if(state.settings){
+  document.getElementById('main')?.setAttribute('inert','');
+  document.querySelector('.site-header')?.setAttribute('inert','');
+  document.querySelector('.access-start')?.setAttribute('inert','');
+  document.querySelector('.voice-shell')?.setAttribute('inert','');
+  document.querySelector('.site-footer')?.setAttribute('inert','');
+  document.querySelector('.activity-panel')?.setAttribute('inert','');
+ }
  announce('Configuração alterada: '+key);
 }
 const app=$('app');
@@ -317,12 +373,12 @@ app.addEventListener('click',event=>{
  const btn=event.target.closest('[data-action]');if(!btn)return;
  switch(btn.dataset.action){
   case 'menu':state.menu=!state.menu;render();break;
-  case 'settings':state.help=false;state.settings=true;render();$('.side-panel select')?.focus();break;
-  case 'help':state.help=true;state.settings=false;render();$('.help-close')?.focus();break;
-  case 'close-overlay':state.settings=false;state.help=false;render();break;
-  case 'intro':state.help=false;render();speak(introText(),{force:true});break;
+  case 'settings':openDialog('settings',btn);break;
+  case 'help':openDialog('help',btn);break;
+  case 'close-overlay':closeDialog();break;
+  case 'intro':if(state.help)closeDialog();speak(introText(),{force:true});break;
   case 'read-page':speak(pageText(state.page),{force:true});break;
-  case 'mic':if(state.micMode!=='hold')beginMicrophone();else if(!mobile)beginMicrophone();break;
+  case 'mic':if(ignoreMicClick){ignoreMicClick=false;break;} beginMicrophone();break;
   case 'activity':state.activity=!state.activity;render();break;
   case 'disconnect':bridge.disconnect();notify('Sessão encerrada.');break;
   case 'clear-demo':state.demo=[];render();announce('Simulação limpa.');break;
@@ -330,10 +386,14 @@ app.addEventListener('click',event=>{
  }
 });
 app.addEventListener('pointerdown',event=>{
- const btn=event.target.closest('#mic-button');if(!btn||state.micMode!=='hold'||event.pointerType==='mouse')return;
- event.preventDefault();holdRequested=true;beginMicrophone(true);
+ const btn=event.target.closest('#mic-button');
+ if(!btn||state.micMode!=='hold'||event.pointerType==='mouse')return;
+ ignoreMicClick=true;holdRequested=true;beginMicrophone(true);
 });
-window.addEventListener('pointerup',()=>{if(state.micMode==='hold'&&holdRequested){holdRequested=false;endMicrophone();}});
+window.addEventListener('pointerup',()=>{
+ if(state.micMode==='hold'&&holdRequested){holdRequested=false;endMicrophone();}
+});
+window.addEventListener('pointercancel',()=>{holdRequested=false;endMicrophone();});
 app.addEventListener('change',event=>{
  const control=event.target.closest('[data-setting]');
  if(control)setSetting(control.dataset.setting,control.type==='checkbox'?control.checked:control.value);
@@ -352,12 +412,27 @@ app.addEventListener('submit',event=>{
 });
 window.addEventListener('keydown',event=>{
  if(event.key==='Escape'){
-   if(state.help||state.settings||state.menu||state.activity){state.help=state.settings=state.menu=state.activity=false;render();}
+   if(state.help||state.settings){closeDialog();}
+   else if(state.menu||state.activity){state.menu=state.activity=false;render();}
    else stopSpeech();
    return;
  }
- if(event.key.toLowerCase()!=='j'||event.altKey||event.ctrlKey||event.metaKey||event.repeat)return;
- if(['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)||document.activeElement?.isContentEditable)return;
+ if((state.help||state.settings)&&event.key==='Tab'){
+   const dialog=document.querySelector('[role="dialog"][aria-modal="true"]');
+   const choices=[...dialog.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled])')].filter(x=>x.getClientRects().length);
+   if(choices.length){
+     const first=choices[0],last=choices.at(-1);
+     if(event.shiftKey&&(document.activeElement===first||!dialog.contains(document.activeElement))){event.preventDefault();last.focus();}
+     else if(!event.shiftKey&&(document.activeElement===last||!dialog.contains(document.activeElement))){event.preventDefault();first.focus();}
+   }
+   return;
+ }
+ if(state.help||state.settings)return;
+ if(event.altKey&&event.key.toLowerCase()==='j'){
+   event.preventDefault();beginMicrophone();return;
+ }
+ if(state.shortcut==='off'||event.key.toLowerCase()!=='j'||event.altKey||event.ctrlKey||event.metaKey||event.repeat)return;
+ if(['INPUT','TEXTAREA','SELECT','BUTTON','A'].includes(document.activeElement?.tagName)||document.activeElement?.isContentEditable)return;
  event.preventDefault();
  if(state.micMode==='hold'){holdRequested=true;beginMicrophone(true);}
  else beginMicrophone();
@@ -365,9 +440,9 @@ window.addEventListener('keydown',event=>{
 window.addEventListener('keyup',event=>{
  if(event.key.toLowerCase()==='j'&&state.micMode==='hold'&&holdRequested){holdRequested=false;endMicrophone();}
 });
-window.addEventListener('hashchange',()=>{
- const page=location.hash.replace('#','');if(CONTENT[page]&&page!==state.page)navigate(page);
-});
+function syncUrl(){const page=location.hash.replace('#','');if(CONTENT[page]&&page!==state.page)navigate(page,{historyMode:'none'});}
+window.addEventListener('hashchange',syncUrl);
+window.addEventListener('popstate',syncUrl);
 window.addEventListener('pagehide',()=>{bridge.disconnect();stopSpeech();});
 render();
 setTimeout(()=>{if(state.tts)speak(introText());},600);

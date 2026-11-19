@@ -43,6 +43,7 @@ const state={
 };
 let holdRequested=false, speaking=false, speechQueue=[],speechVersion=0;
 let agentNarration=null, speechStart=null;
+let readingVersion=0, narrationState=null;
 const streamingActivity=new Map();
 let activityId=0;
 const $=(id)=>document.getElementById(id);
@@ -56,14 +57,20 @@ const bridge=new LiveBridge({
  onText:addActivity,
  onTurnEnd:finishActivity,
  onTool:executeTool,
+ onToolsComplete:readAfterToolCalls,
+ onNarration(value){
+   narrationState=value;
+   syncReadingStatus();
+   if(value==='failed')notify('O Gemini não iniciou a leitura em voz alta. O conteúdo está disponível na página.');
+ },
  onVoiceCommand(text,completed){
    const command=siteCommand(text);
    if(command)runSiteCommand(command,{completed}).catch(e=>notify(e.message));
  },
- onVoiceInput(){if(agentNarration)stopSpeech();},
+ onVoiceInput(){if(agentNarration)stopReading();},
  allowAudio(source){
    // O microfone não deve enviar a voz do próprio narrador para o Gemini.
-   if(source==='microphone')return !agentNarration;
+   if(source==='microphone')return !agentNarration && narrationState!=='playing';
    if(agentNarration)return false;
    if(speaking)stopSpeech();
    return true;
@@ -84,12 +91,28 @@ function introText() {
  ? 'Bem-vindo à Ponto Digital, empresa de desenvolvimento de software para negócios. Você pode navegar com gestos do leitor de tela e ativar botões com toque duplo. A primeira opção da página é ouvir este guia. O botão de microfone se chama Ativar microfone e permite conversar quando a conexão estiver disponível. Um toque liga e outro desliga. Todas as páginas também podem ser lidas sem Gemini.'
  : 'Bem-vindo à Ponto Digital, empresa de desenvolvimento de software para negócios. Para navegar, use Tab até os links e Enter para abrir. O primeiro botão da página permite ouvir estas orientações novamente. A tecla J, marcada por uma saliência tátil, ativa a conversa por voz; Alt mais J é uma alternativa. Use o botão de microfone se seu leitor de tela interceptar J. Também é possível ler páginas sem Gemini e ajustar contraste e texto nas preferências.';
 }
+function readingStatus(){
+ if((speaking && !speechStart) || narrationState==='playing')return 'Leitura em andamento';
+ if(speaking || narrationState==='pending')return 'Preparando leitura em voz alta';
+ return '';
+}
+function syncReadingStatus(){
+ const label=$('tts-indicator');
+ const text=readingStatus();
+ if(label && label.textContent!==text)label.textContent=text;
+}
+function stopReading(){
+ ++readingVersion;
+ narrationState=null;
+ stopSpeech();
+ bridge.cancelNarration();
+}
 function stopSpeech(){
  ++speechVersion;speaking=false;speechQueue=[];
  speechStart?.(false);
  agentNarration=null;
  if('speechSynthesis' in window) speechSynthesis.cancel();
- const label=$('tts-indicator');if(label)label.textContent='';
+ syncReadingStatus();
 }
 function speak(text,{force=false,agent=false}={}){
  if(!('speechSynthesis' in window) || !window.SpeechSynthesisUtterance){
@@ -108,13 +131,13 @@ function speak(text,{force=false,agent=false}={}){
  stopSpeech();
  bridge.stopPlayback();
  speechQueue=chunks;const v=speechVersion;speaking=true;
- const label=$('tts-indicator');if(label)label.textContent='Leitura em andamento';
  const voices=speechSynthesis.getVoices();
  const voice=voices.find(x=>x.lang.toLowerCase()==='pt-br')||voices.find(x=>x.lang.startsWith('pt'));
  const deadline=agent?setTimeout(()=>{if(v===speechVersion)stopSpeech();},2500):null;
  const started=new Promise(resolve=>{
-   speechStart=ok=>{clearTimeout(deadline);speechStart=null;resolve(ok);};
+   speechStart=ok=>{clearTimeout(deadline);speechStart=null;resolve(ok);syncReadingStatus();};
  });
+ syncReadingStatus();
  if(agent)agentNarration={text,started};
  function next(){
    if(v!==speechVersion)return;
@@ -320,7 +343,7 @@ function render() {
    <div class="voice-indicator"><span class="voice-status-dot" id="voice-dot" data-status="${state.status}"></span><div><strong id="voice-status" role="status" aria-live="polite" aria-atomic="true">${statusText()}</strong><span id="mic-hint">${mobile?'Toque para conversar':state.micMode==='hold'?'Segure J para falar':'Pressione J para ligar ou desligar'}</span></div></div>
    <div class="voice-controls"><button class="small-voice-button" data-action="read-page" title="Ouvir página" aria-label="Ler página atual">${ico('sound',21)}</button><button class="small-voice-button" data-action="stop-speech" title="Parar leitura" aria-label="Parar leitura">${ico('stop',18)}</button><button class="mic-main" id="mic-button" data-action="mic" data-active="${bridge.recording}" aria-pressed="${bridge.recording}" aria-label="${bridge.recording?'Parar de falar':'Ativar microfone'}">${ico('mic',25)}</button><button class="small-voice-button" data-action="activity" title="Ver conversa" aria-label="Abrir histórico da conversa">${ico('sparkle',21)}</button></div>
   </div>
-  <div class="dock-subtext"><span id="tts-indicator">${speaking?'Leitura em andamento':''}</span><span>Leitura local sem conexão</span></div>
+  <div class="dock-subtext"><span id="tts-indicator" role="status" aria-live="polite">${readingStatus()}</span><span>Leitura local sem conexão</span></div>
  </div>
  ${state.activity?`<section class="activity-panel" aria-label="Conversa do assistente"><div class="activity-head"><div><span class="section-kicker">RECURSO OPCIONAL</span><h2>Conversa por voz</h2></div><button class="icon-button" data-action="activity" aria-label="Fechar conversa">${ico('x')}</button></div><div id="activity-list" class="activity-list" role="log" aria-live="polite" aria-busy="${streamingActivity.size>0}">${activityMarkup()}</div><form id="chat-form" class="chat-form"><label for="chat-text" class="sr-only">Digite uma mensagem para o assistente</label><input id="chat-text" maxlength="600" placeholder="Ou digite sua pergunta…" autocomplete="off" required><button type="submit" aria-label="Enviar mensagem">${ico('arrow',21)}</button></form><button class="quiet-button" id="disconnect" data-action="disconnect" ${bridge.connected?'':'hidden'}>Encerrar sessão de voz</button></section>`:''}
  ${state.settings?settingsMarkup():''}
@@ -332,7 +355,7 @@ function render() {
 function announce(text){const e=$('screen-announcement');if(e){e.textContent='';requestAnimationFrame(()=>{if(e)e.textContent=text;});}}
 function navigate(id,{historyMode='push'}={}){
  if(!Object.hasOwn(CONTENT,id)){notify('Esta página não existe.');return false;}
- if(state.page!==id && speaking)stopSpeech();
+ if(state.page!==id)stopReading();
  state.page=id;state.menu=false;state.help=false;state.settings=false;
  if(historyMode==='push' && location.hash!==('#'+id))history.pushState({page:id},'','#'+id);
  render();window.scrollTo({top:0,behavior:'instant'});
@@ -343,7 +366,7 @@ function navigate(id,{historyMode='push'}={}){
 const microphoneDenied='Microfone bloqueado pelo navegador. Você ainda pode conversar por texto.';
 async function beginMicrophone(isHold=false){
  if(bridge.recording){if(!isHold)bridge.stopMicrophone();return;}
- stopSpeech();
+ stopReading();
  try {
    if(!await bridge.connect(state.model,state.thinking))return;
    if(isHold&&!holdRequested){speak('Conexão pronta. Segure a tecla J novamente para falar.',{force:true});return;}
@@ -367,8 +390,10 @@ function resolvePage(text){
 }
 const pageNames=new RegExp('\\b(?:'+NAV.map(({id})=>id).join('|')+')\\b');
 function siteCommand(text){
- const command=normalizeText(text).replace(/[,.!?]+/g,' ').replace(/\s+/g,' ').trim();
- if(/^onde (?:ajusto|mudo|altero|aumento|diminuo) (?:o tamanho (?:da fonte|do texto)|o contraste)$/.test(command))return {page:'acessibilidade'};
+ const normalized=normalizeText(text).replace(/[,.!?]+/g,' ').replace(/\s+/g,' ').trim();
+ const silent=normalized.match(/\s+(?:(?:e )?sem (?:ler|narrar|leitura|audio|som|voz)|em silencio|(?:e )?nao (?:leia|narre|fale))$/);
+ const command=silent?normalized.slice(0,silent.index):normalized;
+ if(/^onde (?:ajusto|mudo|altero|aumento|diminuo) (?:o tamanho (?:da fonte|do texto)|o contraste)$/.test(command))return {page:'acessibilidade',read:!silent};
  if(/^(?:preciso de ajuda para acompanhar|nao consigo ler) (?:a pagina|a tela|o texto)(?: atual)?$/.test(command))return {read:true};
  if(!command || /\b(?:nao|nunca|sem|evite)\b/.test(command))return null;
  const page=command.match(pageNames)?.[0];
@@ -376,42 +401,68 @@ function siteCommand(text){
  const read=/^(?:(?:por favor|voce pode|pode) )?(?:leia|ler|le|quero (?:ouvir|escutar)|gostaria de (?:ouvir|escutar))\b/.test(command);
  const readAfterNavigation=go&&/\be (?:leia|le|inicie a leitura)\b/.test(command);
  const section=command.match(/\bsecao\s+(?:sobre\s+|de\s+|do\s+|da\s+)?(.+)$/)?.[1];
- if(readAfterNavigation&&page)return {page,read:true,section};
+ if(go&&page)return {page,read:!silent,section:readAfterNavigation?section:undefined};
  if(read && (page || /\b(?:pagina|tela|conteudo|texto|secao)\b/.test(command))){
    return {page:section?undefined:page,read:true,section};
  }
- if(go&&page)return {page};
  return null;
 }
 async function runSiteCommand(command,{completed=new Set(),showConfirmation=false}={}){
- const actions=[];
- const session=bridge.session;
- const {model,thinking}=state;
  if(command.page && state.page!==command.page && !completed.has('navigate_to')){
-   const result=await executeTool('navigate_to',{page:command.page});
-   if(result.success)actions.push('Página aberta: '+result.page+'.');
+   await executeTool('navigate_to',{page:command.page});
  }
- if(showConfirmation && command.page===state.page && !command.read){
+ if(showConfirmation && command.page===state.page){
    addActivity('Ponto','Página '+NAV.find(({id})=>id===state.page).label+' aberta.');
  }
+ if(command.page===state.page)bridge.noteSiteAction('Página aberta: '+state.page+'.');
  if(command.read && !completed.has('read_page') && !completed.has('read_section')){
-   const result=await executeTool(command.section?'read_section':'read_page',{section:command.section});
-   if(result.success)actions.push('Leitura local iniciada na página '+result.page+'.');
-   else if(result.text && bridge.session===session && state.model===model && state.thinking===thinking){
-     try {
-       if(await bridge.connect(model,thinking)){
-         if(actions.length)bridge.noteSiteAction(actions.join(' '));
-         bridge.narrate(result.text);
-         return true;
-       }
-     } catch(error){notify(result.error+' '+error.message);}
-   } else if(bridge.session===session)notify(result.error);
+   await readForGuide(command.section);
  }
- if(actions.length && bridge.session===session)bridge.noteSiteAction(actions.join(' '));
+}
+async function readForGuide(section,prepared){
+ stopReading();
+ const request=readingVersion;
+ const {model,thinking}=state;
+ const result=prepared??await executeTool(section?'read_section':'read_page',{section});
+ if(request!==readingVersion)return;
+ if(result.success){
+   addActivity('Ponto','Lendo '+result.title.replace(/[.!?]$/,'')+'.');
+   return;
+ }
+ if(!result.text){notify(result.error);return;}
+ narrationState='pending';
+ syncReadingStatus();
+ try {
+   const connected=await bridge.connect(model,thinking);
+   if(request!==readingVersion)return;
+   if(connected){bridge.narrate(result.text);return;}
+ } catch(error){
+   if(request===readingVersion){
+     bridge.cancelNarration();
+     notify(result.error+' '+error.message);
+   }
+ }
+ if(request===readingVersion){narrationState=null;syncReadingStatus();}
+}
+function readAfterToolCalls(responses){
+ const reading=responses.findLast(({name})=>name==='read_page' || name==='read_section');
+ if(reading){
+   const result=reading.response.result;
+   if(result?.text && !result.success && result.page===state.page){
+     readForGuide(undefined,result);
+     return true;
+   }
+   return false;
+ }
+ const navigation=responses.findLast(({name,response})=>name==='navigate_to' && response.result?.readsPage);
+ if(navigation?.response.result.page!==state.page)return false;
+ readForGuide();
  return true;
 }
 async function readWithNarrator(text,details){
+ const request=readingVersion;
  if(await speak(text,{agent:true}))return {success:true,...details};
+ if(request!==readingVersion)return {success:false,cancelled:true,...details};
  return {success:false,...details,error:state.tts?'O navegador não iniciou a leitura em voz alta.':'O narrador local está desativado.',text};
 }
 async function executeTool(name,args){
@@ -420,8 +471,9 @@ async function executeTool(name,args){
   case 'navigate_to': {
     const id=resolvePage(args.page);
     if(!id)return {success:false,error:'Página inexistente',available:NAV.map(x=>x.id)};
-    if(id!==state.page)navigate(id);
-    return {success:true,page:id,title:CONTENT[id].title,description:CONTENT[id].description};
+    const changed=id!==state.page;
+    if(changed)navigate(id);
+    return {success:true,page:id,title:CONTENT[id].title,description:CONTENT[id].description,readsPage:changed&&args.readAloud!==false};
   }
   case 'get_navigation_options':return NAV.map(x=>({page:x.id,label:x.label}));
   case 'get_page_content':{
@@ -480,7 +532,7 @@ function setSetting(key,value){
  const focusedId=document.activeElement?.id;
  if(['font','rate'].includes(key))value=Number(value);
  if(key==='tts')value=Boolean(value);
- if((key==='model' || key==='thinking')&&state[key]!==value){bridge.disconnect();stopSpeech();}
+ if((key==='model' || key==='thinking')&&state[key]!==value){stopReading();bridge.disconnect();}
  if(key==='tts'&&!value)stopSpeech();
  state[key]=value;persist(key,value);render();
  if(focusedId)document.getElementById(focusedId)?.focus();
@@ -512,9 +564,9 @@ app.addEventListener('click',event=>{
   case 'read-page':speak(pageText(state.page),{force:true});break;
   case 'mic':if(ignoreMicClick){ignoreMicClick=false;break;} beginMicrophone();break;
   case 'activity':state.activity=!state.activity;render();break;
-  case 'disconnect':bridge.disconnect();notify('Sessão encerrada.');break;
+  case 'disconnect':stopReading();bridge.disconnect();notify('Sessão encerrada.');break;
   case 'clear-demo':state.demo=[];render();announce('Simulação limpa.');break;
-  case 'stop-speech':stopSpeech();break;
+  case 'stop-speech':stopReading();break;
  }
 });
 app.addEventListener('pointerdown',event=>{
@@ -534,11 +586,13 @@ async function sendChatMessage(text){
  if(state.notice===microphoneDenied)notify('');
  const command=siteCommand(text);
  if(command){
+   if(command.read)bridge.initOutput();
    finishActivity();
    addActivity('Você',text);
    await runSiteCommand(command,{showConfirmation:true});
    return;
  }
+ stopReading();
  if(await bridge.connect(state.model,state.thinking))bridge.sendText(text);
 }
 app.addEventListener('submit',event=>{
@@ -556,9 +610,9 @@ app.addEventListener('submit',event=>{
 });
 window.addEventListener('keydown',event=>{
  if(event.key==='Escape'){
-   if(state.help||state.settings){closeDialog();}
+   if(speaking || narrationState==='pending' || narrationState==='playing')stopReading();
+   else if(state.help||state.settings){closeDialog();}
    else if(state.menu||state.activity){state.menu=state.activity=false;render();}
-   else stopSpeech();
    return;
  }
  if((state.help||state.settings)&&event.key==='Tab'){
@@ -587,6 +641,6 @@ window.addEventListener('keyup',event=>{
 function syncUrl(){const page=location.hash.slice(1)||'inicio';if(Object.hasOwn(CONTENT,page)&&page!==state.page)navigate(page,{historyMode:'none'});}
 window.addEventListener('hashchange',syncUrl);
 window.addEventListener('popstate',syncUrl);
-window.addEventListener('pagehide',()=>{bridge.disconnect();stopSpeech();});
+window.addEventListener('pagehide',()=>{stopReading();bridge.disconnect();});
 render();
 setTimeout(()=>{if(state.tts&&!speaking&&!bridge.opening&&!bridge.connected)speak(introText());},600);

@@ -1,6 +1,6 @@
 import './styles.css';
 import { NAV, CONTENT, pageText } from './data.js';
-import { LiveBridge } from './live.js';
+import { LIVE_EXTENDED, LIVE_FAST, LiveBridge } from './live.js';
 
 const icons={
   mic:'<path d="M12 19v3m-5-3h10M9 9v4a3 3 0 0 0 6 0V9a3 3 0 0 0-6 0Zm-4 4a7 7 0 0 0 14 0"/>',
@@ -33,14 +33,16 @@ const mobile=matchMedia('(pointer: coarse)').matches;
 let previousDialogFocus=null;
 let ignoreMicClick=false;
 const load=(key,fallback)=>{try{const x=localStorage.getItem('pd.'+key);return x==null?fallback:JSON.parse(x);}catch{return fallback;}};
+const savedModel=load('model',LIVE_EXTENDED);
 const state={
- page: CONTENT[location.hash.replace('#','')]?location.hash.slice(1):'inicio',
+ page: Object.hasOwn(CONTENT,location.hash.slice(1))?location.hash.slice(1):'inicio',
  theme:load('theme','light'),font:load('font',1),micMode:load('micMode',mobile?'toggle':'hold'),
- tts:load('tts',true),rate:load('rate',1),shortcut:load('shortcut','j'),model:load('model','gemini-3.8-live'),
+ tts:load('tts',true),rate:load('rate',1),shortcut:load('shortcut','j'),model:savedModel===LIVE_FAST?LIVE_FAST:LIVE_EXTENDED,
  thinking:load('thinking','medium'),settings:false,help:false,menu:false,activity:false,
  status:'offline',transcript:[],demo:[],notice:'',intro:true
 };
 let holdRequested=false, speaking=false, speechQueue=[],speechVersion=0;
+let agentNarration=null, speechStart=null;
 const $=(id)=>document.getElementById(id);
 const persist=(key,value)=>{try{localStorage.setItem('pd.'+key,JSON.stringify(value));}catch{}};
 function statusText(){
@@ -51,7 +53,15 @@ const bridge=new LiveBridge({
  onError(message){notify(message);},
  onText(who,text){addActivity(who,text);},
  onTool:executeTool,
- onAudio(){if(speaking)stopSpeech();}
+ onVoiceCommand(text,actions){runSiteCommand(text,actions).catch(e=>notify(e.message));},
+ onVoiceInput(){if(agentNarration)stopSpeech();},
+ allowAudio(source){
+   // O microfone não deve enviar a voz do próprio narrador para o Gemini.
+   if(source==='microphone')return !agentNarration;
+   if(agentNarration)return false;
+   if(speaking)stopSpeech();
+   return true;
+ }
 });
 function notify(text){
  state.notice=text;
@@ -70,33 +80,49 @@ function introText() {
 }
 function stopSpeech(){
  ++speechVersion;speaking=false;speechQueue=[];
+ speechStart?.(false);
+ agentNarration=null;
  if('speechSynthesis' in window) speechSynthesis.cancel();
  const label=$('tts-indicator');if(label)label.textContent='';
 }
-function speak(text,{force=false}={}){
- if(!('speechSynthesis' in window)){notify('A leitura por voz não está disponível neste navegador.');return;}
- if(!state.tts&&!force)return;
+function speak(text,{force=false,agent=false}={}){
+ if(!('speechSynthesis' in window) || !window.SpeechSynthesisUtterance){
+   if(!agent)notify('A leitura por voz não está disponível neste navegador.');
+   return Promise.resolve(false);
+ }
+ if(!state.tts&&!force)return Promise.resolve(false);
+ if(agent && agentNarration?.text===text)return agentNarration.started;
+ const chunks=String(text).trim().match(/[^.!?]+[.!?]+|[^.!?]+$/g)?.flatMap(piece=>{
+   const words=piece.trim().split(/\s+/);
+   const parts=[];
+   while(words.length)parts.push(words.splice(0,35).join(' '));
+   return parts;
+ })||[];
+ if(!chunks.length)return Promise.resolve(false);
  stopSpeech();
  bridge.stopPlayback();
- const chunks=String(text).match(/[^.!?]+[.!?]+|[^.!?]+$/g)?.reduce((list,piece)=>{
-   const words=piece.trim().split(/\s+/);
-   while(words.length){list.push(words.splice(0,Math.min(35,words.length)).join(' '));}
-   return list;
- },[])||[];
  speechQueue=chunks;const v=speechVersion;speaking=true;
  const label=$('tts-indicator');if(label)label.textContent='Leitura em andamento';
  const voices=speechSynthesis.getVoices();
  const voice=voices.find(x=>x.lang.toLowerCase()==='pt-br')||voices.find(x=>x.lang.startsWith('pt'));
+ const deadline=agent?setTimeout(()=>{if(v===speechVersion)stopSpeech();},2500):null;
+ const started=new Promise(resolve=>{
+   speechStart=ok=>{clearTimeout(deadline);speechStart=null;resolve(ok);};
+ });
+ if(agent)agentNarration={text,started};
  function next(){
    if(v!==speechVersion)return;
    const chunk=speechQueue.shift();
-   if(!chunk){speaking=false;const box=$('tts-indicator');if(box)box.textContent='';return;}
+   if(!chunk){stopSpeech();return;}
    const u=new SpeechSynthesisUtterance(chunk);
-   u.lang='pt-BR';u.rate=state.rate; if(voice)u.voice=voice;
-   u.onend=next;u.onerror=next;
-   speechSynthesis.speak(u);
+   u.lang='pt-BR';u.rate=state.rate;if(voice)u.voice=voice;
+   u.onstart=()=>{if(v===speechVersion)speechStart?.(true);};
+   u.onend=next;
+   u.onerror=()=>{if(v===speechVersion)stopSpeech();};
+   try{speechSynthesis.speak(u);}catch{if(v===speechVersion)stopSpeech();}
  }
  next();
+ return started;
 }
 function addActivity(who,text) {
  if(!text?.trim())return;
@@ -218,9 +244,9 @@ function settingsMarkup() {
   <label for="font-select">Tamanho do texto</label><select id="font-select" data-setting="font"><option value="1" ${state.font==1?'selected':''}>Padrão (100%)</option><option value="1.18" ${state.font==1.18?'selected':''}>Grande (118%)</option><option value="1.36" ${state.font==1.36?'selected':''}>Muito grande (136%)</option><option value="1.55" ${state.font==1.55?'selected':''}>Máximo (155%)</option></select></div>
   <div class="setting-group"><h3>Microfone</h3><label for="mic-select">Como ativar</label><select id="mic-select" data-setting="micMode"><option value="toggle" ${state.micMode==='toggle'?'selected':''}>Alternar: um toque liga, outro desliga</option><option value="hold" ${state.micMode==='hold'?'selected':''}>Segurar para falar</option></select><p class="setting-note">J possui uma saliência tátil no teclado. Alt + J funciona como alternativa para tecnologias assistivas. Todos os controles também funcionam com Tab e Enter.</p>
   <label for="shortcut-select">Atalho de uma letra</label><select id="shortcut-select" data-setting="shortcut"><option value="j" ${state.shortcut==='j'?'selected':''}>J habilitado</option><option value="off" ${state.shortcut==='off'?'selected':''}>Desativar J isolado (manter Alt + J)</option></select></div>
-  <div class="setting-group"><h3>Assistente Gemini</h3><label for="model-select">Modelo de voz</label><select id="model-select" data-setting="model"><option value="gemini-3.8-live" ${state.model==='gemini-3.8-live'?'selected':''}>Gemini 3.8 Live · rápido</option><option value="gemini-3.8-live-extended-thinking" ${state.model.includes('extended')?'selected':''}>Gemini 3.8 Live · Extended Thinking</option></select>
-  ${state.model.includes('extended')? `<label for="think-select">Raciocínio avançado</label><select id="think-select" data-setting="thinking"><option value="low" ${state.thinking==='low'?'selected':''}>Baixo</option><option value="medium" ${state.thinking==='medium'?'selected':''}>Médio</option><option value="high" ${state.thinking==='high'?'selected':''}>Alto</option></select>`:''}
-  <p class="setting-note">Alterar o modelo desconecta a sessão atual. Conecte novamente usando o microfone.</p></div>
+  <div class="setting-group"><h3>Assistente Gemini</h3><label for="model-select">Modelo de voz</label><select id="model-select" data-setting="model"><option value="${LIVE_FAST}" ${state.model===LIVE_FAST?'selected':''}>Gemini 3.8 Live · rápido</option><option value="${LIVE_EXTENDED}" ${state.model===LIVE_EXTENDED?'selected':''}>Gemini 3.8 Live · Extended Thinking (padrão)</option></select>
+  ${state.model===LIVE_EXTENDED? `<label for="think-select">Raciocínio avançado</label><select id="think-select" data-setting="thinking"><option value="low" ${state.thinking==='low'?'selected':''}>Baixo</option><option value="medium" ${state.thinking==='medium'?'selected':''}>Médio</option><option value="high" ${state.thinking==='high'?'selected':''}>Alto</option></select>`:''}
+  <p class="setting-note">Alterar o modelo ou o nível de raciocínio encerra a sessão atual. Use o microfone ou envie uma mensagem para conectar novamente.</p></div>
   <div class="setting-group"><h3>Leitura por voz do navegador</h3><label class="switch-line"><input type="checkbox" data-setting="tts" ${state.tts?'checked':''}> Ativar narrador local</label><label for="rate-select">Velocidade do narrador local</label><select id="rate-select" data-setting="rate"><option value="0.7" ${state.rate===.7?'selected':''}>Lenta (0,7×)</option><option value="1" ${state.rate===1?'selected':''}>Normal (1×)</option><option value="1.2" ${state.rate===1.2?'selected':''}>Rápida (1,2×)</option><option value="1.4" ${state.rate===1.4?'selected':''}>Muito rápida (1,4×)</option></select></div>
   <button class="btn btn-primary panel-cta" data-action="close-overlay">Concluir ${ico('check',19)}</button>
  </aside>`;
@@ -259,7 +285,7 @@ function render() {
    <div class="voice-indicator"><span class="voice-status-dot" id="voice-dot" data-status="${state.status}"></span><div><strong id="voice-status" role="status" aria-live="polite" aria-atomic="true">${statusText()}</strong><span id="mic-hint">${mobile?'Toque para conversar':state.micMode==='hold'?'Segure J para falar':'Pressione J para ligar ou desligar'}</span></div></div>
    <div class="voice-controls"><button class="small-voice-button" data-action="read-page" title="Ouvir página" aria-label="Ler página atual">${ico('sound',21)}</button><button class="small-voice-button" data-action="stop-speech" title="Parar leitura" aria-label="Parar leitura">${ico('stop',18)}</button><button class="mic-main" id="mic-button" data-action="mic" data-active="${bridge.recording}" aria-pressed="${bridge.recording}" aria-label="${bridge.recording?'Parar de falar':'Ativar microfone'}">${ico('mic',25)}</button><button class="small-voice-button" data-action="activity" title="Ver conversa" aria-label="Abrir histórico da conversa">${ico('sparkle',21)}</button></div>
   </div>
-  <div class="dock-subtext"><span id="tts-indicator"></span><span>Leitura local sem conexão</span></div>
+  <div class="dock-subtext"><span id="tts-indicator">${speaking?'Leitura em andamento':''}</span><span>Leitura local sem conexão</span></div>
  </div>
  ${state.activity?`<section class="activity-panel" aria-label="Conversa do assistente"><div class="activity-head"><div><span class="section-kicker">RECURSO OPCIONAL</span><h2>Conversa por voz</h2></div><button class="icon-button" data-action="activity" aria-label="Fechar conversa">${ico('x')}</button></div><div id="activity-list" class="activity-list" role="log" aria-live="polite">${activityMarkup()}</div><form id="chat-form" class="chat-form"><label for="chat-text" class="sr-only">Digite uma mensagem para o assistente</label><input id="chat-text" maxlength="600" placeholder="Ou digite sua pergunta…" autocomplete="off" required><button type="submit" aria-label="Enviar mensagem">${ico('arrow',21)}</button></form><button class="quiet-button" id="disconnect" data-action="disconnect" ${bridge.connected?'':'hidden'}>Encerrar sessão de voz</button></section>`:''}
  ${state.settings?settingsMarkup():''}
@@ -270,7 +296,8 @@ function render() {
 }
 function announce(text){const e=$('screen-announcement');if(e){e.textContent='';requestAnimationFrame(()=>{if(e)e.textContent=text;});}}
 function navigate(id,{historyMode='push'}={}){
- if(!CONTENT[id]){notify('Esta página não existe.');return false;}
+ if(!Object.hasOwn(CONTENT,id)){notify('Esta página não existe.');return false;}
+ if(state.page!==id && speaking)stopSpeech();
  state.page=id;state.menu=false;state.help=false;state.settings=false;
  if(historyMode==='push' && location.hash!==('#'+id))history.pushState({page:id},'','#'+id);
  render();window.scrollTo({top:0,behavior:'instant'});
@@ -282,29 +309,78 @@ async function beginMicrophone(isHold=false){
  if(bridge.recording){if(!isHold)bridge.stopMicrophone();return;}
  stopSpeech();
  try {
-   await bridge.connect(state.model,state.thinking);
+   if(!await bridge.connect(state.model,state.thinking))return;
    if(isHold&&!holdRequested){speak('Conexão pronta. Segure a tecla J novamente para falar.',{force:true});return;}
    await bridge.startMicrophone();
  } catch(e){notify(e.message||'Não foi possível ativar o microfone.');}
 }
 function endMicrophone(){bridge.stopMicrophone();}
+const normalizeText=text=>String(text??'').normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase().trim();
+function resolvePage(text){
+ const page=normalizeText(text).replace(/^#/,'');
+ return NAV.find(({id,label})=>id===page||normalizeText(label)===page)?.id;
+}
+function siteCommand(text){
+ const command=normalizeText(text).replace(/[,.!?]+/g,' ').replace(/\s+/g,' ').trim();
+ if(/^onde (?:ajusto|mudo|altero|aumento|diminuo) (?:o tamanho (?:da fonte|do texto)|o contraste)$/.test(command))return {page:'acessibilidade'};
+ if(/^(?:preciso de ajuda para acompanhar|nao consigo ler) (?:a pagina|a tela|o texto)(?: atual)?$/.test(command))return {read:true};
+ if(!command || /\b(?:nao|nunca|sem|evite)\b/.test(command))return null;
+ const page=NAV.find(({id})=>new RegExp('\\b'+id+'\\b').test(command))?.id;
+ const go=/^(?:(?:por favor|voce pode|pode) )?(?:abra|abre|mostre|mostra|navegue|va|ir para|me leve|leve[ -]me|quero (?:ver|conhecer|explorar|ir|abrir)|gostaria de (?:ver|conhecer|explorar|abrir))\b/.test(command);
+ const read=/^(?:(?:por favor|voce pode|pode) )?(?:leia|ler|le|quero (?:ouvir|escutar)|gostaria de (?:ouvir|escutar))\b/.test(command);
+ const readAfterNavigation=go&&/\be (?:leia|le|inicie a leitura)\b/.test(command);
+ const section=command.match(/\bsecao\s+(?:sobre\s+|de\s+|do\s+|da\s+)?(.+)$/)?.[1];
+ if(readAfterNavigation&&page)return {page,read:true,section};
+ if(read && (page || /\b(?:pagina|tela|conteudo|texto|secao)\b/.test(command))){
+   return {page:section?undefined:page,read:true,section};
+ }
+ if(go&&page)return {page};
+ return null;
+}
+async function runSiteCommand(text,completed=new Set()){
+ const command=siteCommand(text);
+ if(!command)return false;
+ const actions=[];
+ const session=bridge.session;
+ if(command.page && state.page!==command.page && !completed.has('navigate_to')){
+   const result=await executeTool('navigate_to',{page:command.page});
+   if(result.success)actions.push('Página aberta: '+result.page+'.');
+ }
+ if(command.read && !completed.has('read_page') && !completed.has('read_section')){
+   const result=await executeTool(command.section?'read_section':'read_page',{section:command.section});
+   if(result.success)actions.push('Leitura local iniciada na página '+result.page+'.');
+   else notify(result.error);
+ }
+ if(actions.length && bridge.session===session)bridge.noteSiteAction(actions.join(' '));
+ return true;
+}
+async function readWithNarrator(text,details){
+ if(await speak(text,{agent:true}))return {success:true,...details};
+ return {success:false,...details,error:state.tts?'O navegador não iniciou a leitura em voz alta.':'O narrador local está desativado.',text};
+}
 async function executeTool(name,args){
  const current=CONTENT[state.page];
  switch(name){
   case 'navigate_to': {
-    const ok=navigate(String(args.page||'').toLowerCase().trim());
-    return ok?{success:true,page:state.page,title:CONTENT[state.page].title,description:CONTENT[state.page].description}:{success:false,error:'Página inexistente',available:NAV.map(x=>x.id)};
+    const id=resolvePage(args.page);
+    if(!id)return {success:false,error:'Página inexistente',available:NAV.map(x=>x.id)};
+    if(id!==state.page)navigate(id);
+    return {success:true,page:id,title:CONTENT[id].title,description:CONTENT[id].description};
   }
   case 'get_navigation_options':return NAV.map(x=>({page:x.id,label:x.label}));
   case 'get_page_content':{
-    const id=args.page&&CONTENT[args.page]?args.page:state.page;
+    const id=args.page?resolvePage(args.page):state.page;
+    if(!id)return {error:'Página inexistente',available:NAV.map(x=>x.id)};
     return {page:id,title:CONTENT[id].title,description:CONTENT[id].description,sections:CONTENT[id].sections};
   }
+  case 'read_page':return readWithNarrator(pageText(state.page),{page:state.page,title:current.title});
   case 'read_section':
   case 'summarize_section':{
-    const query=String(args.section||'').trim().toLocaleLowerCase('pt-BR');
-    const match=current.sections.find(x=>x.title.toLocaleLowerCase('pt-BR').includes(query))||(!query?current.sections[0]:null);
-    return match?{page:state.page,title:match.title,text:match.body,instruction:name==='read_section'?'Recite o conteúdo para o visitante.':'Resuma de forma clara para o visitante.'}:{error:'Seção não encontrada',available:current.sections.map(x=>x.title)};
+    const query=normalizeText(args.section);
+    const match=current.sections.find(x=>normalizeText(x.title).includes(query));
+    if(!match)return {error:'Seção não encontrada',available:current.sections.map(x=>x.title)};
+    if(name==='read_section')return readWithNarrator(match.title+'. '+match.body,{page:state.page,title:match.title});
+    return {page:state.page,title:match.title,text:match.body,instruction:'Resuma de forma clara para o visitante.'};
   }
   case 'set_theme': {
     if(!['light','dark','contrast'].includes(args.theme))return {error:'Tema inválido'};
@@ -348,7 +424,7 @@ function setSetting(key,value){
  const focusedId=document.activeElement?.id;
  if(['font','rate'].includes(key))value=Number(value);
  if(key==='tts')value=Boolean(value);
- if(key==='model' || key==='thinking')bridge.disconnect();
+ if((key==='model' || key==='thinking')&&state[key]!==value){bridge.disconnect();stopSpeech();}
  if(key==='tts'&&!value)stopSpeech();
  state[key]=value;persist(key,value);render();
  if(focusedId)document.getElementById(focusedId)?.focus();
@@ -369,7 +445,7 @@ app.addEventListener('click',event=>{
  const read=event.target.closest('[data-read-section]');
  if(read){const section=CONTENT[state.page].sections[Number(read.dataset.readSection)];if(section)speak(section.title+'. '+section.body,{force:true});return;}
  const prompt=event.target.closest('[data-prompt]');
- if(prompt){state.activity=true;render();bridge.connect(state.model,state.thinking).then(()=>bridge.sendText(prompt.dataset.prompt)).catch(e=>notify(e.message||'Não foi possível conectar ao Gemini.'));return;}
+ if(prompt){state.activity=true;render();sendChatMessage(prompt.dataset.prompt).catch(e=>notify(e.message||'Não foi possível conectar ao Gemini.'));return;}
  const btn=event.target.closest('[data-action]');if(!btn)return;
  switch(btn.dataset.action){
   case 'menu':state.menu=!state.menu;render();break;
@@ -398,6 +474,14 @@ app.addEventListener('change',event=>{
  const control=event.target.closest('[data-setting]');
  if(control)setSetting(control.dataset.setting,control.type==='checkbox'?control.checked:control.value);
 });
+async function sendChatMessage(text){
+ if(state.model===LIVE_EXTENDED && siteCommand(text)){
+   addActivity('Você',text);
+   await runSiteCommand(text);
+   return;
+ }
+ if(await bridge.connect(state.model,state.thinking))bridge.sendText(text);
+}
 app.addEventListener('submit',event=>{
  if(event.target.id==='demo-form'){
    event.preventDefault();const data=new FormData(event.target);
@@ -408,7 +492,7 @@ app.addEventListener('submit',event=>{
    event.preventDefault();const value=$('chat-text')?.value.trim();
    if(!value)return;
    const input=$('chat-text');if(input)input.value='';
-   bridge.connect(state.model,state.thinking).then(()=>bridge.sendText(value)).catch(e=>{notify(e.message||'Não foi possível enviar a mensagem.'); const box=$('chat-text');if(box)box.value=value;});
+   sendChatMessage(value).catch(e=>{notify(e.message||'Não foi possível enviar a mensagem.'); const box=$('chat-text');if(box)box.value=value;});
  }
 });
 window.addEventListener('keydown',event=>{
@@ -441,9 +525,9 @@ window.addEventListener('keydown',event=>{
 window.addEventListener('keyup',event=>{
  if(event.key.toLowerCase()==='j'&&state.micMode==='hold'&&holdRequested){holdRequested=false;endMicrophone();}
 });
-function syncUrl(){const page=location.hash.replace('#','');if(CONTENT[page]&&page!==state.page)navigate(page,{historyMode:'none'});}
+function syncUrl(){const page=location.hash.slice(1)||'inicio';if(Object.hasOwn(CONTENT,page)&&page!==state.page)navigate(page,{historyMode:'none'});}
 window.addEventListener('hashchange',syncUrl);
 window.addEventListener('popstate',syncUrl);
 window.addEventListener('pagehide',()=>{bridge.disconnect();stopSpeech();});
 render();
-setTimeout(()=>{if(state.tts)speak(introText());},600);
+setTimeout(()=>{if(state.tts&&!speaking&&!bridge.opening&&!bridge.connected)speak(introText());},600);

@@ -33,11 +33,11 @@ const mobile=matchMedia('(pointer: coarse)').matches;
 let previousDialogFocus=null;
 let ignoreMicClick=false;
 const load=(key,fallback)=>{try{const x=localStorage.getItem('pd.'+key);return x==null?fallback:JSON.parse(x);}catch{return fallback;}};
-const savedModel=load('model',LIVE_EXTENDED);
+const savedModel=load('model',LIVE_FLASH);
 const state={
  page: Object.hasOwn(CONTENT,location.hash.slice(1))?location.hash.slice(1):'inicio',
  theme:load('theme','light'),font:load('font',1),micMode:load('micMode',mobile?'toggle':'hold'),
- tts:load('tts',true),rate:load('rate',1),shortcut:load('shortcut','j'),model:[LIVE_FAST,LIVE_FLASH].includes(savedModel)?savedModel:LIVE_EXTENDED,
+ tts:load('tts',true),rate:load('rate',1),shortcut:load('shortcut','j'),model:[LIVE_FAST,LIVE_EXTENDED,LIVE_FLASH].includes(savedModel)?savedModel:LIVE_FLASH,
  thinking:load('thinking','medium'),settings:false,help:false,menu:false,activity:false,
  status:'offline',transcript:[],demo:[],notice:'',retry:null,sessionModel:null,intro:true
 };
@@ -91,14 +91,13 @@ function notify(text){
  }
  if(text)console.info('[Ponto Digital]',text);
 }
-function handleStalledTurn({model,retryText}){
+function handleStalledTurn({model,retryText,reason}){
  state.retry=model===LIVE_FLASH?null:{text:retryText};
  state.status='stalled';
  syncLive();
  const input=$('chat-text');
  if(input && retryText && !input.value)input.value=retryText;
- notify('O Gemini ficou 15 segundos sem avançar e a sessão foi encerrada. '+(
-   state.retry?'Você pode usar o Gemini 3.1 Flash Live.':'Envie uma nova mensagem para reconectar.'));
+ notify(reason+' '+(state.retry?'Você pode usar o Gemini 3.1 Flash Live.':'Envie uma nova mensagem para reconectar.'));
 }
 async function retryWithFlash(){
  const retry=state.retry;
@@ -337,7 +336,7 @@ function settingsMarkup() {
   <label for="font-select">Tamanho do texto</label><select id="font-select" data-setting="font"><option value="1" ${state.font==1?'selected':''}>Padrão (100%)</option><option value="1.18" ${state.font==1.18?'selected':''}>Grande (118%)</option><option value="1.36" ${state.font==1.36?'selected':''}>Muito grande (136%)</option><option value="1.55" ${state.font==1.55?'selected':''}>Máximo (155%)</option></select></div>
   <div class="setting-group"><h3>Microfone</h3><label for="mic-select">Como ativar</label><select id="mic-select" data-setting="micMode"><option value="toggle" ${state.micMode==='toggle'?'selected':''}>Alternar: um toque liga, outro desliga</option><option value="hold" ${state.micMode==='hold'?'selected':''}>Segurar para falar</option></select><p class="setting-note">J possui uma saliência tátil no teclado. Alt + J funciona como alternativa para tecnologias assistivas. Todos os controles também funcionam com Tab e Enter.</p>
   <label for="shortcut-select">Atalho de uma letra</label><select id="shortcut-select" data-setting="shortcut"><option value="j" ${state.shortcut==='j'?'selected':''}>J habilitado</option><option value="off" ${state.shortcut==='off'?'selected':''}>Desativar J isolado (manter Alt + J)</option></select></div>
-  <div class="setting-group"><h3>Assistente Gemini</h3><label for="model-select">Modelo de voz</label><select id="model-select" data-setting="model"><option value="${LIVE_FAST}" ${state.model===LIVE_FAST?'selected':''}>Gemini 3.8 Live · rápido</option><option value="${LIVE_EXTENDED}" ${state.model===LIVE_EXTENDED?'selected':''}>Gemini 3.8 Live · Extended Thinking (padrão)</option><option value="${LIVE_FLASH}" ${state.model===LIVE_FLASH?'selected':''}>Gemini 3.1 Flash Live Preview</option></select>
+  <div class="setting-group"><h3>Assistente Gemini</h3><label for="model-select">Modelo de voz</label><select id="model-select" data-setting="model"><option value="${LIVE_FAST}" ${state.model===LIVE_FAST?'selected':''}>Gemini 3.8 Live · rápido</option><option value="${LIVE_EXTENDED}" ${state.model===LIVE_EXTENDED?'selected':''}>Gemini 3.8 Live · Extended Thinking</option><option value="${LIVE_FLASH}" ${state.model===LIVE_FLASH?'selected':''}>Gemini 3.1 Flash Live Preview (padrão)</option></select>
   ${state.model===LIVE_EXTENDED? `<label for="think-select">Raciocínio avançado</label><select id="think-select" data-setting="thinking"><option value="low" ${state.thinking==='low'?'selected':''}>Baixo</option><option value="medium" ${state.thinking==='medium'?'selected':''}>Médio</option><option value="high" ${state.thinking==='high'?'selected':''}>Alto</option></select>`:''}
   <p class="setting-note">Alterar o modelo ou o nível de raciocínio encerra a sessão atual. Use o microfone ou envie uma mensagem para conectar novamente.</p></div>
   <div class="setting-group"><h3>Leitura por voz do navegador</h3><label class="switch-line"><input type="checkbox" data-setting="tts" ${state.tts?'checked':''}> Ativar narrador local</label><label for="rate-select">Velocidade do narrador local</label><select id="rate-select" data-setting="rate"><option value="0.7" ${state.rate===.7?'selected':''}>Lenta (0,7×)</option><option value="1" ${state.rate===1?'selected':''}>Normal (1×)</option><option value="1.2" ${state.rate===1.2?'selected':''}>Rápida (1,2×)</option><option value="1.4" ${state.rate===1.4?'selected':''}>Muito rápida (1,4×)</option></select></div>
@@ -446,7 +445,10 @@ function showToolResults(responses){
    const reading=name==='navigate_to'?result?.narration:
      (name==='read_page' || name==='read_section')?result:null;
    if(!reading || reading.cancelled)continue;
-   if(reading.success)addActivity('Ponto','Lendo '+reading.title.replace(/[.!?]$/,'')+'.');
+   if(reading.success){
+     bridge.markLocalNarration();
+     addActivity('Ponto','Lendo '+reading.title.replace(/[.!?]$/,'')+'.');
+   }
    else if(reading.text && reading.page===state.page)bridge.expectNarration();
    else if(reading.error)notify(reading.error);
  }

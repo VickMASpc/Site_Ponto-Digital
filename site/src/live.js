@@ -121,6 +121,7 @@ export class LiveBridge {
         speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:'Aoede'}}}
       };
       if(extended) config.thinkingConfig={thinkingLevel:(['low','medium','high'].includes(level)?level:'medium').toUpperCase()};
+      else if(model===LIVE_FLASH)config.thinkingConfig={thinkingLevel:'MINIMAL'};
       let session;
       const setup=new Promise((resolve,reject)=>{
         controller.signal.addEventListener('abort',()=>reject(controller.signal.reason),{once:true});
@@ -139,7 +140,7 @@ export class LiveBridge {
               if(attempt!==this.sessionId || controller.signal.aborted) return;
               const reason=event.reason?.replace(/[\r\n]+/g,' ').slice(0,200);
               const error='O Gemini encerrou a conexão ('+event.code+').'+(reason?' '+reason:'');
-              if(this.connected) {this.disconnect();this.onError(error);}
+              if(this.connected)this.failTurn(error);
               else reject(new Error(error));
             }
           }
@@ -193,25 +194,31 @@ export class LiveBridge {
     this.scheduled.clear();this.nextPlayTime=0;
   }
   beginTurn(text='', typed=false, interrupting=false) {
-    this.turn={text,typed,interrupting,hasTool:false,hasAudio:false,transcript:''};
+    this.turn={text,typed,interrupting,hasTool:false,hasAudio:false,localNarration:false,transcript:''};
     this.watchTurn();
   }
   watchTurn() {
     clearTimeout(this.turnTimer);
     const turn=this.turn;
     if(!turn)return;
-    this.turnTimer=setTimeout(()=>{
-      const model=this.model;
-      this.disconnect();
-      this.onStalled?.({model,retryText:turn.hasTool?'':turn.text.trim()});
-    },TURN_IDLE_TIMEOUT_MS);
+    this.turnTimer=setTimeout(()=>this.failTurn('O Gemini ficou 15 segundos sem avançar e a sessão foi encerrada.'),TURN_IDLE_TIMEOUT_MS);
+  }
+  failTurn(reason) {
+    const {turn,model}=this;
+    this.disconnect();
+    if(turn)this.onStalled?.({model,retryText:turn.hasTool?'':turn.text.trim(),reason});
+    else this.onError(reason);
+  }
+  markLocalNarration() {
+    if(this.turn)this.turn.localNarration=true;
   }
   endTurn() {
     clearTimeout(this.turnTimer);
     const turn=this.turn;
     this.turn=null;
-    if(turn?.transcript.trim() && !turn.hasAudio && !turn.hasTool && !this.silenceOutput){
+    if(turn?.transcript.trim() && !turn.hasAudio && !turn.localNarration && !this.silenceOutput){
       this.stopPlayback();
+      if(this.narration==='pending')this.setNarration(null);
       this.onTextOnly?.(turn.transcript.trim());
     }
   }
@@ -351,7 +358,7 @@ export class LiveBridge {
     if(interrupting)this.stopPlayback();
     this.beginTurn(text,true,interrupting);
     this.onState('busy');
-    if(interrupting){
+    if(interrupting || this.model===LIVE_FLASH){
       this.session.sendClientContent({turns:[{role:'user',parts:[{text}]}],turnComplete:true});
     } else this.session.sendRealtimeInput({text});
   }

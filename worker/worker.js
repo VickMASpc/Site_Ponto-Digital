@@ -1,5 +1,3 @@
-import { decideGuideAction } from './guide.js';
-
 /**
  * Cloudflare Worker: token temporário para uma sessão Live.
  * Configure GEMINI_API_KEY como segredo (wrangler secret put GEMINI_API_KEY).
@@ -38,33 +36,20 @@ function json(body, status, origin='') {
 export default {
   async fetch(request, env) {
     const origin = request.headers.get('Origin') || '';
-    const {origin: ownOrigin, pathname} = new URL(request.url);
+    const ownOrigin = new URL(request.url).origin;
     if (!origin || (origin !== ownOrigin && origin !== env.SITE_ORIGIN)) return json({error:'Origem não autorizada'},403);
     if (request.method === 'OPTIONS') return new Response(null, {
       status:204,
       headers:{'Access-Control-Allow-Origin':origin,'Access-Control-Allow-Methods':'POST, OPTIONS','Access-Control-Allow-Headers':'Content-Type','Access-Control-Max-Age':'600'}
     });
-    const guide = pathname === '/guide';
-    if ((!guide && pathname !== '/token') || request.method !== 'POST') return json({error:'Rota não encontrada'}, 404, origin);
-    const limiter = guide ? env.GUIDE_RATE_LIMIT : env.RATE_LIMIT;
-    if (!env.GEMINI_API_KEY || !limiter) return json({error:'Servidor ainda não configurado'},503,origin);
+    if (new URL(request.url).pathname !== '/token' || request.method !== 'POST') return json({error:'Rota não encontrada'}, 404, origin);
+    if (!env.GEMINI_API_KEY || !env.RATE_LIMIT) return json({error:'Servidor ainda não configurado'},503,origin);
     const address = request.headers.get('CF-Connecting-IP') || 'unknown';
-    const permitted = await limiter.limit({key:address});
-    if (!permitted.success) return json({error:'Limite de solicitações atingido. Tente novamente mais tarde.'},429,origin);
+    const permitted = await env.RATE_LIMIT.limit({key:address});
+    if (!permitted.success) return json({error:'Limite de sessões atingido. Tente novamente mais tarde.'},429,origin);
     let body;
-    try {
-      if (guide) {
-        if (Number(request.headers.get('Content-Length')) > 8192) return json({error:'Pedido longo demais'},413,origin);
-        const content = await request.text();
-        if (content.length > 8192) return json({error:'Pedido longo demais'},413,origin);
-        body = JSON.parse(content);
-      } else body = await request.json();
-    } catch { return json({error:'JSON inválido'},400,origin); }
-    if (guide) {
-      const result = await decideGuideAction(body, env.GEMINI_API_KEY);
-      return json(result.body, result.status, origin);
-    }
-    if (!MODELS.has(body?.model)) return json({error:'Modelo indisponível'},400,origin);
+    try { body = await request.json(); } catch { return json({error:'JSON inválido'},400,origin); }
+    if (!MODELS.has(body.model)) return json({error:'Modelo indisponível'},400,origin);
     // Minimal body from Google's REST documentation for auth_tokens.create.
     // Token defaults: 1 use, 1 minute to start, 30 minutes of lifetime.
     // Previously we included liveConnectConstraints; the token server returned 400.

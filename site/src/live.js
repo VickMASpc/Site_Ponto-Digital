@@ -1,5 +1,6 @@
 import { GoogleGenAI, Modality } from '@google/genai';
 import { NAV, pageText } from './data.js';
+import { guideInstructions, guideSchema, normalizeGuidePlan } from './guide-actions.js';
 
 export const LIVE_FAST = 'gemini-3.8-live';
 export const LIVE_EXTENDED = 'gemini-3.8-live-extended-thinking';
@@ -37,6 +38,18 @@ const nativeGuideInstructions = `Use as ferramentas para navegar, ler e configur
 const extendedGuideInstructions = `Outro Gemini da mesma interface decide as ações de navegação, leitura e preferências. Registros [Ponto Digital] já descrevem o que o site fez. Não prometa ou confirme ações que a interface não registrou. Se a pessoa estiver pedindo apenas uma ação de interface, aguarde a execução sem fazer comentários. Para perguntas sobre a Ponto Digital, use o conteúdo abaixo para responder.
 ${NAV.map(({id,label})=>label+': '+pageText(id)).join('\n')}`;
 
+function functionSchema({type,properties,items,...schema}) {
+  return {
+    ...schema,type:type.toUpperCase(),
+    ...(properties?{properties:Object.fromEntries(Object.entries(properties).map(([name, value])=>[name,functionSchema(value)]))}:{}),
+    ...(items?{items:functionSchema(items)}:{})
+  };
+}
+const planTools=[{functionDeclarations:[{
+  name:'submit_plan',description:'Devolver a decisão sobre a última fala, mesmo se ações estiver vazio.',
+  parameters:functionSchema(guideSchema)
+}]}];
+
 function encodePCM(samples, sampleRate) {
   const outLength = Math.floor(samples.length * 16000 / sampleRate);
   if (!outLength) return null;
@@ -63,8 +76,9 @@ function decodePCM(base64) {
 }
 
 export class LiveBridge {
-  constructor({onState,onText,onTurnEnd,onTool,onToolsComplete,onNarration,onError,allowAudio,onVoiceCommand,onVoiceInput}) {
+  constructor({onState,onText,onTurnEnd,onTool,onToolsComplete,onNarration,onError,allowAudio,onVoiceCommand,onVoiceInput,planning=false}) {
     this.onState=onState; this.onText=onText; this.onTurnEnd=onTurnEnd; this.onTool=onTool; this.onError=onError;
+    this.planning=planning;
     this.onToolsComplete=onToolsComplete;this.onNarration=onNarration;
     this.allowAudio=allowAudio; this.onVoiceCommand=onVoiceCommand; this.onVoiceInput=onVoiceInput;
     this.session=null; this.connected=false; this.recording=false;
@@ -88,7 +102,7 @@ export class LiveBridge {
     this.onState('connecting');
     const timeout=setTimeout(()=>controller.abort(new Error('O Gemini demorou para confirmar a sessão. Tente conectar novamente.')),15000);
     opening.promise=(async()=>{
-      this.initOutput();
+      if(!this.planning)this.initOutput();
       const res=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model}),signal:controller.signal});
       let payload={};
       try{payload=await res.json()}catch{}
@@ -101,8 +115,8 @@ export class LiveBridge {
       const extended=model===LIVE_EXTENDED;
       const config={
         responseModalities:[Modality.AUDIO],
-        systemInstruction:instructions+(extended?extendedGuideInstructions:nativeGuideInstructions),
-        ...(extended?{}:{tools}),
+        systemInstruction:this.planning?guideInstructions+'\nPara toda fala, execute submit_plan antes de produzir qualquer áudio.':instructions+(extended?extendedGuideInstructions:nativeGuideInstructions),
+        ...(extended?{}:{tools:this.planning?planTools:tools}),
         inputAudioTranscription:{},
         outputAudioTranscription:{},
         speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:'Aoede'}}}
@@ -336,5 +350,53 @@ export class LiveBridge {
     this.session=null;this.connected=false;this.model=null;this.hideReply=false;this.silenceOutput=false;
     this.outputContext?.close().catch(()=>{});this.outputContext=null;
     this.onState('offline');
+  }
+}
+
+
+// This Live session only returns model decisions. The visitor's Live voice stays separate.
+export class LiveGuide {
+  constructor() {
+    this.pending=null;
+    this.bridge=new LiveBridge({
+      planning:true,
+      allowAudio:()=>false,
+      onState:state=>{if(state==='offline')this.pending?.finish(null);},
+      onText:()=>{},
+      onError:()=>this.pending?.finish(null),
+      onTool:(name,args)=>name==='submit_plan'?normalizeGuidePlan(args):null,
+      onToolsComplete:responses=>{
+        const response=responses.find(item=>item.name==='submit_plan');
+        if(response)this.pending?.finish(response.response.result);
+      }
+    });
+  }
+  async decide(input,signal) {
+    signal.throwIfAborted();
+    if(!await this.bridge.connect(LIVE_FAST,'low'))throw new Error('A sessão de decisão foi interrompida.');
+    signal.throwIfAborted();
+    return new Promise((resolve,reject)=>{
+      const finish=plan=>{
+        if(this.pending?.finish!==finish)return;
+        this.pending=null;
+        clearTimeout(timeout);
+        signal.removeEventListener('abort',cancel);
+        if(plan)resolve(plan);
+        else reject(new Error('O Gemini Live não devolveu uma decisão.'));
+      };
+      const cancel=()=>{
+        finish(null);
+        this.bridge.disconnect();
+      };
+      const timeout=setTimeout(cancel,8500);
+      this.pending={finish};
+      signal.addEventListener('abort',cancel,{once:true});
+      try {this.bridge.sendText(JSON.stringify(input),{display:false});}
+      catch {cancel();}
+    });
+  }
+  disconnect() {
+    this.pending?.finish(null);
+    this.bridge.disconnect();
   }
 }

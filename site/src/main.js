@@ -1,6 +1,6 @@
 import './styles.css';
 import { NAV, CONTENT, pageText } from './data.js';
-import { LIVE_EXTENDED, LIVE_FAST, LiveBridge } from './live.js';
+import { LIVE_EXTENDED, LIVE_FAST, LiveBridge, LiveGuide } from './live.js';
 
 const icons={
   mic:'<path d="M12 19v3m-5-3h10M9 9v4a3 3 0 0 0 6 0V9a3 3 0 0 0-6 0Zm-4 4a7 7 0 0 0 14 0"/>',
@@ -53,6 +53,7 @@ function statusText(){
  if(guideThinking)return 'Gemini está decidindo como ajudar…';
  return {offline:'Assistente desconectado',connecting:'Conectando ao Gemini…',ready:'Conectado — pronto para conversar',listening:'Ouvindo você…',busy:'Processando sua solicitação…'}[state.status]||'';
 }
+const liveGuide=new LiveGuide();
 const bridge=new LiveBridge({
  onState(value){state.status=value;syncLive();},
  onError(message){notify(message);},
@@ -394,19 +395,6 @@ function cancelGuideRequest(){
  guideThinking=false;
  syncLive();
 }
-async function requestGuidePlan(text, history, signal){
- const tokenEndpoint=import.meta.env.VITE_TOKEN_ENDPOINT || (location.hostname.endsWith('.github.io')?null:'/token');
- if(!tokenEndpoint)throw new Error('Conversa Live não configurada no servidor. O narrador local continua disponível.');
- const endpoint=new URL('guide',new URL(tokenEndpoint,location.href));
- const response=await fetch(endpoint,{
-   method:'POST',headers:{'Content-Type':'application/json'},signal,
-   body:JSON.stringify({text,page:state.page,history})
- });
- const plan=await response.json().catch(()=>null);
- if(!response.ok)throw new Error(plan?.error||'O Gemini não conseguiu decidir a ação.');
- if(!Array.isArray(plan?.actions) || typeof plan.respond!=='boolean')throw new Error('O Gemini não devolveu uma decisão válida.');
- return plan;
-}
 function waitForReading(signal){
  if(!readingStatus() || signal.aborted)return Promise.resolve();
  return new Promise(resolve=>{
@@ -436,7 +424,7 @@ async function handleGuideTurn(text,{voice=false}={}){
  }
  try {
    let plan;
-   try {plan=await requestGuidePlan(text.slice(0,1200),history,signal);}
+   try {plan=await liveGuide.decide({text:text.slice(0,1200),page:state.page,history},signal);}
    catch(error){
      if(signal.aborted)return;
      notify(error.message||'O Gemini não conseguiu decidir a ação.');
@@ -593,7 +581,7 @@ function setSetting(key,value){
  const focusedId=document.activeElement?.id;
  if(['font','rate'].includes(key))value=Number(value);
  if(key==='tts')value=Boolean(value);
- if((key==='model' || key==='thinking')&&state[key]!==value){cancelGuideRequest();stopReading();bridge.disconnect();}
+ if((key==='model' || key==='thinking')&&state[key]!==value){cancelGuideRequest();liveGuide.disconnect();stopReading();bridge.disconnect();}
  if(key==='tts'&&!value)stopSpeech();
  state[key]=value;persist(key,value);render();
  if(focusedId)document.getElementById(focusedId)?.focus();
@@ -625,7 +613,7 @@ app.addEventListener('click',event=>{
   case 'read-page':speak(pageText(state.page),{force:true});break;
   case 'mic':if(ignoreMicClick){ignoreMicClick=false;break;} beginMicrophone();break;
   case 'activity':state.activity=!state.activity;render();break;
-  case 'disconnect':cancelGuideRequest();stopReading();bridge.disconnect();notify('Sessão encerrada.');break;
+  case 'disconnect':cancelGuideRequest();liveGuide.disconnect();stopReading();bridge.disconnect();notify('Sessão encerrada.');break;
   case 'clear-demo':state.demo=[];render();announce('Simulação limpa.');break;
   case 'stop-speech':cancelGuideRequest();stopReading();break;
  }
@@ -700,6 +688,6 @@ window.addEventListener('keyup',event=>{
 function syncUrl(){const page=location.hash.slice(1)||'inicio';if(Object.hasOwn(CONTENT,page)&&page!==state.page){cancelGuideRequest();navigate(page,{historyMode:'none'});}}
 window.addEventListener('hashchange',syncUrl);
 window.addEventListener('popstate',syncUrl);
-window.addEventListener('pagehide',()=>{cancelGuideRequest();stopReading();bridge.disconnect();});
+window.addEventListener('pagehide',()=>{cancelGuideRequest();liveGuide.disconnect();stopReading();bridge.disconnect();});
 render();
 setTimeout(()=>{if(state.tts&&!speaking&&!bridge.opening&&!bridge.connected)speak(introText());},600);

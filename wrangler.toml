@@ -2,13 +2,13 @@ name = "site-ponto-digital"
 main = "worker/worker.js"
 compatibility_date = "2026-10-26"
 
-# O mesmo Worker hospeda o build Vite (docs/) e as rotas /token e /guide.
+# O mesmo Worker hospeda o build Vite (docs/) e o endpoint /token.
 # A opção run_worker_first impede que a rota da API caia na SPA.
 [assets]
 directory = "./docs"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
-run_worker_first = ["/token", "/guide"]
+run_worker_first = ["/token"]
 
 # Origem adicional permitida para uso com GitHub Pages; a própria
 # URL workers.dev também é aceita automaticamente pelo Worker.
@@ -22,11 +22,4 @@ name = "RATE_LIMIT"
 namespace_id = "1001"
 [ratelimits.simple]
 limit = 6
-period = 60
-
-[[ratelimits]]
-name = "GUIDE_RATE_LIMIT"
-namespace_id = "1002"
-[ratelimits.simple]
-limit = 18
 period = 60

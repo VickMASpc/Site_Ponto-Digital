@@ -57,8 +57,10 @@ const guideRequest=()=>new Request('https://example.workers.dev/guide',{
 const guideEnv={...testEnv,GUIDE_RATE_LIMIT:testEnv.RATE_LIMIT};
 try {
   let decision={actions:[{name:'navigate_to',page:'empresa'}],respond:false};
+  let unavailable=false;
   globalThis.fetch=async (url,options)=>{
-    assert(String(url).endsWith('/gemini-3.8-flash:generateContent'));
+    if(unavailable && String(url).includes('/gemini-3.6-flash:'))return new Response(null,{status:503});
+    assert(/gemini-3\.[68]-flash:generateContent$/.test(String(url)));
     const payload=JSON.parse(options.body);
     const input=JSON.parse(payload.contents[0].parts[0].text);
     assert.equal(input.text,'Me mostre as soluções da empresa.');
@@ -66,7 +68,11 @@ try {
   };
   const planned=await worker.fetch(guideRequest(),guideEnv);
   assert.equal(planned.status,200);
-  assert.deepEqual(await planned.json(),decision,'Browser executes the model decision as returned');
+  assert.deepEqual(await planned.json(),{model:'gemini-3.6-flash',...decision},'Browser executes the model decision as returned');
+  unavailable=true;
+  const backup=await worker.fetch(guideRequest(),guideEnv);
+  assert.deepEqual(await backup.json(),{model:'gemini-3.8-flash',...decision},'Use a second Gemini model when the first is unavailable');
+  unavailable=false;
   decision={actions:[{name:'navigate_to',page:'https://invalid.example/'}],respond:false};
   assert.equal((await worker.fetch(guideRequest(),guideEnv)).status,502,'Reject unregistered destinations');
   assert.equal((await worker.fetch(guideRequest(),{...guideEnv,GUIDE_RATE_LIMIT:{limit:async()=>({success:false})}})).status,429);

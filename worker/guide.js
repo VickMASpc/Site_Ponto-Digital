@@ -1,6 +1,6 @@
 import { NAV, CONTENT } from '../site/src/data.js';
 
-const model = 'gemini-3.8-flash';
+const models = ['gemini-3.6-flash', 'gemini-3.8-flash'];
 const pages = NAV.map(({id}) => id);
 const actionFields = {
   navigate_to: 'page',
@@ -69,42 +69,50 @@ export async function decideGuideAction(body, apiKey) {
     .filter(entry => ['Você', 'Ponto'].includes(entry?.who) && typeof entry.text === 'string')
     .map(({who,text}) => ({who, text: text.slice(0, 360)}));
   const input = JSON.stringify({page: body.page, history, text: body.text});
-  try {
-    const upstream = await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent', {
-      method: 'POST',
-      headers: {'x-goog-api-key': apiKey, 'Content-Type': 'application/json'},
-      signal: AbortSignal.timeout(10000),
-      body: JSON.stringify({
-        systemInstruction: {parts: [{text: instructions}]},
-        contents: [{role: 'user', parts: [{text: input}]}],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          responseJsonSchema: schema,
-          maxOutputTokens: 768,
-          thinkingConfig: {thinkingLevel: 'LOW'}
-        }
-      })
-    });
-    if (!upstream.ok) {
-      console.warn('Gemini guide decision rejected', {status: upstream.status});
-      return {status: 502, body: {error: 'O Gemini não conseguiu decidir a ação.', upstreamStatus: upstream.status}};
+  const payload = JSON.stringify({
+    systemInstruction: {parts: [{text: instructions}]},
+    contents: [{role: 'user', parts: [{text: input}]}],
+    generationConfig: {
+      responseMimeType: 'application/json',
+      responseJsonSchema: schema,
+      maxOutputTokens: 768,
+      thinkingConfig: {thinkingLevel: 'LOW'}
     }
-    const data = await upstream.json();
-    const output = data.candidates?.[0]?.content?.parts?.filter(part => !part.thought)
-      .map(part => part.text || '').join('');
-    const decision = JSON.parse(output || 'null');
-    if (!decision || typeof decision.respond !== 'boolean' || !Array.isArray(decision.actions) ||
-        decision.actions.length > 5 || !decision.actions.every(isAction)) {
-      throw new Error('Invalid model decision');
+  });
+  const failures = [];
+  for (const model of models) {
+    try {
+      const upstream = await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent', {
+        method: 'POST',
+        headers: {'x-goog-api-key': apiKey, 'Content-Type': 'application/json'},
+        signal: AbortSignal.timeout(6500),
+        body: payload
+      });
+      if (!upstream.ok) {
+        failures.push({model, status: upstream.status});
+        continue;
+      }
+      const data = await upstream.json();
+      const output = data.candidates?.[0]?.content?.parts?.filter(part => !part.thought)
+        .map(part => part.text || '').join('');
+      const decision = JSON.parse(output || 'null');
+      if (!decision || typeof decision.respond !== 'boolean' || !Array.isArray(decision.actions) ||
+          decision.actions.length > 5 || !decision.actions.every(isAction)) {
+        failures.push({model, status: 'invalid output'});
+        continue;
+      }
+      return {status: 200, body: {
+        model,
+        respond: decision.respond,
+        actions: decision.actions.map(action => {
+          const field = actionFields[action.name];
+          return field ? {name: action.name, [field]: action[field]} : {name: action.name};
+        })
+      }};
+    } catch (error) {
+      failures.push({model, status: error.name});
     }
-    return {status: 200, body: {
-      respond: decision.respond,
-      actions: decision.actions.map(action => {
-        const field = actionFields[action.name];
-        return field ? {name: action.name, [field]: action[field]} : {name: action.name};
-      })
-    }};
-  } catch {
-    return {status: 502, body: {error: 'O Gemini não conseguiu decidir a ação.'}};
   }
+  console.warn('Gemini guide decision unavailable', failures);
+  return {status: 502, body: {error: 'O Gemini não conseguiu decidir a ação.'}};
 }

@@ -43,6 +43,8 @@ const state={
 };
 let holdRequested=false, speaking=false, speechQueue=[],speechVersion=0;
 let agentNarration=null, speechStart=null;
+const streamingActivity=new Map();
+let activityId=0;
 const $=(id)=>document.getElementById(id);
 const persist=(key,value)=>{try{localStorage.setItem('pd.'+key,JSON.stringify(value));}catch{}};
 function statusText(){
@@ -51,9 +53,13 @@ function statusText(){
 const bridge=new LiveBridge({
  onState(value){state.status=value;syncLive();},
  onError(message){notify(message);},
- onText(who,text){addActivity(who,text);},
+ onText:addActivity,
+ onTurnEnd:finishActivity,
  onTool:executeTool,
- onVoiceCommand(text,actions){runSiteCommand(text,actions).catch(e=>notify(e.message));},
+ onVoiceCommand(text,completed){
+   const command=siteCommand(text);
+   if(command)runSiteCommand(command,{completed}).catch(e=>notify(e.message));
+ },
  onVoiceInput(){if(agentNarration)stopSpeech();},
  allowAudio(source){
    // O microfone não deve enviar a voz do próprio narrador para o Gemini.
@@ -66,8 +72,8 @@ const bridge=new LiveBridge({
 function notify(text){
  state.notice=text;
  const box=$('notice');
- if(box){box.textContent=text;box.hidden=false;}
- console.info('[Ponto Digital]',text);
+ if(box){box.textContent=text;box.hidden=!text;}
+ if(text)console.info('[Ponto Digital]',text);
 }
 function applyPrefs() {
  document.documentElement.dataset.theme=['light','dark','contrast'].includes(state.theme)?state.theme:'light';
@@ -124,18 +130,46 @@ function speak(text,{force=false,agent=false}={}){
  next();
  return started;
 }
-function addActivity(who,text) {
- if(!text?.trim())return;
- const last=state.transcript.at(-1);
- if(last?.who===who && last.text===text)return;
- state.transcript.push({who,text:String(text).slice(0,1200)});
- state.transcript=state.transcript.slice(-18);
+function addActivity(who,text,{stream=false}={}) {
+ if(!text)return;
  const list=$('activity-list');
- if(list){list.innerHTML=activityMarkup();list.scrollTop=list.scrollHeight;}
+ const atBottom=list && list.scrollHeight-list.scrollTop-list.clientHeight<48;
+ const active=stream?streamingActivity.get(who):null;
+ if(active){
+   // Preserve whitespace and punctuation in the Gemini transcription deltas.
+   active.text+=text;
+   const paragraph=$('activity-'+active.id)?.querySelector('p');
+   if(paragraph)paragraph.textContent=active.text;
+ } else {
+   if(!text.trim())return;
+   const entry={id:++activityId,who,text};
+   state.transcript.push(entry);
+   if(stream)streamingActivity.set(who,entry);
+   if(list){
+     if(stream)list.setAttribute('aria-busy','true');
+     list.querySelector('.empty-activity')?.remove();
+     list.insertAdjacentHTML('beforeend',activityMessage(entry));
+   }
+   if(state.transcript.length>18){
+     const removed=state.transcript.shift();
+     $('activity-'+removed.id)?.remove();
+     if(streamingActivity.get(removed.who)===removed)finishActivity(removed.who);
+   }
+ }
+ if(atBottom || (!stream && who==='Você')){if(list)list.scrollTop=list.scrollHeight;}
+}
+function finishActivity(who){
+ if(who)streamingActivity.delete(who);
+ else streamingActivity.clear();
+ $('activity-list')?.setAttribute('aria-busy',String(streamingActivity.size>0));
+}
+function activityMessage(entry){
+ const role=entry.who==='Você'?'user-message':'agent-message';
+ return `<div id="activity-${entry.id}" class="message ${role}"><span>${esc(entry.who)}</span><p>${esc(entry.text)}</p></div>`;
 }
 function activityMarkup(){
  return state.transcript.length
- ? state.transcript.map(x=>`<div class="message ${x.who==='Você'?'user-message':'agent-message'}"><span>${esc(x.who)}</span><p>${esc(x.text)}</p></div>`).join('')
+ ? state.transcript.map(activityMessage).join('')
  : '<p class="empty-activity">Sua conversa aparecerá aqui, com transcrições quando o Gemini fornecê-las.</p>';
 }
 function syncLive() {
@@ -287,7 +321,7 @@ function render() {
   </div>
   <div class="dock-subtext"><span id="tts-indicator">${speaking?'Leitura em andamento':''}</span><span>Leitura local sem conexão</span></div>
  </div>
- ${state.activity?`<section class="activity-panel" aria-label="Conversa do assistente"><div class="activity-head"><div><span class="section-kicker">RECURSO OPCIONAL</span><h2>Conversa por voz</h2></div><button class="icon-button" data-action="activity" aria-label="Fechar conversa">${ico('x')}</button></div><div id="activity-list" class="activity-list" role="log" aria-live="polite">${activityMarkup()}</div><form id="chat-form" class="chat-form"><label for="chat-text" class="sr-only">Digite uma mensagem para o assistente</label><input id="chat-text" maxlength="600" placeholder="Ou digite sua pergunta…" autocomplete="off" required><button type="submit" aria-label="Enviar mensagem">${ico('arrow',21)}</button></form><button class="quiet-button" id="disconnect" data-action="disconnect" ${bridge.connected?'':'hidden'}>Encerrar sessão de voz</button></section>`:''}
+ ${state.activity?`<section class="activity-panel" aria-label="Conversa do assistente"><div class="activity-head"><div><span class="section-kicker">RECURSO OPCIONAL</span><h2>Conversa por voz</h2></div><button class="icon-button" data-action="activity" aria-label="Fechar conversa">${ico('x')}</button></div><div id="activity-list" class="activity-list" role="log" aria-live="polite" aria-busy="${streamingActivity.size>0}">${activityMarkup()}</div><form id="chat-form" class="chat-form"><label for="chat-text" class="sr-only">Digite uma mensagem para o assistente</label><input id="chat-text" maxlength="600" placeholder="Ou digite sua pergunta…" autocomplete="off" required><button type="submit" aria-label="Enviar mensagem">${ico('arrow',21)}</button></form><button class="quiet-button" id="disconnect" data-action="disconnect" ${bridge.connected?'':'hidden'}>Encerrar sessão de voz</button></section>`:''}
  ${state.settings?settingsMarkup():''}
  ${state.help?helpMarkup():''}
  <div class="sr-only" role="status" aria-live="polite" id="screen-announcement"></div>
@@ -305,6 +339,7 @@ function navigate(id,{historyMode='push'}={}){
  announce('Página '+NAV.find(x=>x.id===id)?.label+'. '+CONTENT[id].title);
  return true;
 }
+const microphoneDenied='Microfone bloqueado pelo navegador. Você ainda pode conversar por texto.';
 async function beginMicrophone(isHold=false){
  if(bridge.recording){if(!isHold)bridge.stopMicrophone();return;}
  stopSpeech();
@@ -312,7 +347,16 @@ async function beginMicrophone(isHold=false){
    if(!await bridge.connect(state.model,state.thinking))return;
    if(isHold&&!holdRequested){speak('Conexão pronta. Segure a tecla J novamente para falar.',{force:true});return;}
    await bridge.startMicrophone();
- } catch(e){notify(e.message||'Não foi possível ativar o microfone.');}
+ } catch(e){
+   if(e.name==='NotAllowedError' || e.name==='PermissionDeniedError'){
+     state.activity=true;
+     render();
+     notify(microphoneDenied);
+     $('chat-text')?.focus();
+     return;
+   }
+   notify(e.message||'Não foi possível ativar o microfone.');
+ }
 }
 function endMicrophone(){bridge.stopMicrophone();}
 const normalizeText=text=>String(text??'').normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase().trim();
@@ -320,13 +364,14 @@ function resolvePage(text){
  const page=normalizeText(text).replace(/^#/,'');
  return NAV.find(({id,label})=>id===page||normalizeText(label)===page)?.id;
 }
+const pageNames=new RegExp('\\b(?:'+NAV.map(({id})=>id).join('|')+')\\b');
 function siteCommand(text){
  const command=normalizeText(text).replace(/[,.!?]+/g,' ').replace(/\s+/g,' ').trim();
  if(/^onde (?:ajusto|mudo|altero|aumento|diminuo) (?:o tamanho (?:da fonte|do texto)|o contraste)$/.test(command))return {page:'acessibilidade'};
  if(/^(?:preciso de ajuda para acompanhar|nao consigo ler) (?:a pagina|a tela|o texto)(?: atual)?$/.test(command))return {read:true};
  if(!command || /\b(?:nao|nunca|sem|evite)\b/.test(command))return null;
- const page=NAV.find(({id})=>new RegExp('\\b'+id+'\\b').test(command))?.id;
- const go=/^(?:(?:por favor|voce pode|pode) )?(?:abra|abre|mostre|mostra|navegue|va|ir para|me leve|leve[ -]me|quero (?:ver|conhecer|explorar|ir|abrir)|gostaria de (?:ver|conhecer|explorar|abrir))\b/.test(command);
+ const page=command.match(pageNames)?.[0];
+ const go=/^(?:por favor )?(?:(?:voce pode|pode) )?(?:(?:me )?(?:abra|abre|abrir|mostre|mostra|mostrar|leve|leva|levar)|(?:abra|mostre|leve)[ -]me|navegue|va|ir para|quero (?:ver|conhecer|explorar|ir|abrir)|gostaria de (?:ver|conhecer|explorar|abrir))\b/.test(command);
  const read=/^(?:(?:por favor|voce pode|pode) )?(?:leia|ler|le|quero (?:ouvir|escutar)|gostaria de (?:ouvir|escutar))\b/.test(command);
  const readAfterNavigation=go&&/\be (?:leia|le|inicie a leitura)\b/.test(command);
  const section=command.match(/\bsecao\s+(?:sobre\s+|de\s+|do\s+|da\s+)?(.+)$/)?.[1];
@@ -337,15 +382,16 @@ function siteCommand(text){
  if(go&&page)return {page};
  return null;
 }
-async function runSiteCommand(text,completed=new Set()){
- const command=siteCommand(text);
- if(!command)return false;
+async function runSiteCommand(command,{completed=new Set(),showConfirmation=false}={}){
  const actions=[];
  const session=bridge.session;
  const {model,thinking}=state;
  if(command.page && state.page!==command.page && !completed.has('navigate_to')){
    const result=await executeTool('navigate_to',{page:command.page});
    if(result.success)actions.push('Página aberta: '+result.page+'.');
+ }
+ if(showConfirmation && command.page===state.page && !command.read){
+   addActivity('Ponto','Página '+NAV.find(({id})=>id===state.page).label+' aberta.');
  }
  if(command.read && !completed.has('read_page') && !completed.has('read_section')){
    const result=await executeTool(command.section?'read_section':'read_page',{section:command.section});
@@ -484,9 +530,12 @@ app.addEventListener('change',event=>{
  if(control)setSetting(control.dataset.setting,control.type==='checkbox'?control.checked:control.value);
 });
 async function sendChatMessage(text){
- if(state.model===LIVE_EXTENDED && siteCommand(text)){
+ if(state.notice===microphoneDenied)notify('');
+ const command=siteCommand(text);
+ if(command){
+   finishActivity();
    addActivity('Você',text);
-   await runSiteCommand(text);
+   await runSiteCommand(command,{showConfirmation:true});
    return;
  }
  if(await bridge.connect(state.model,state.thinking))bridge.sendText(text);

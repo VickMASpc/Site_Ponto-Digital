@@ -61,8 +61,8 @@ function decodePCM(base64) {
 }
 
 export class LiveBridge {
-  constructor({onState,onText,onTool,onError,allowAudio,onVoiceCommand,onVoiceInput}) {
-    this.onState=onState; this.onText=onText; this.onTool=onTool; this.onError=onError;
+  constructor({onState,onText,onTurnEnd,onTool,onError,allowAudio,onVoiceCommand,onVoiceInput}) {
+    this.onState=onState; this.onText=onText; this.onTurnEnd=onTurnEnd; this.onTool=onTool; this.onError=onError;
     this.allowAudio=allowAudio; this.onVoiceCommand=onVoiceCommand; this.onVoiceInput=onVoiceInput;
     this.session=null; this.connected=false; this.recording=false;
     this.inputStream=null; this.inputContext=null; this.worklet=null; this.source=null;
@@ -174,6 +174,7 @@ export class LiveBridge {
     const content=msg.serverContent;
     if(content?.interrupted) {
       this.stopPlayback();
+      this.onTurnEnd?.();
       clearTimeout(this.voiceCommandTimer);
       this.voiceText='';
       this.actionsThisTurn.clear();
@@ -181,7 +182,7 @@ export class LiveBridge {
     }
     const input=content?.inputTranscription;
     if(input?.text) {
-      this.onText('Você',input.text);
+      this.onText('Você',input.text,{stream:true});
       if(this.model===LIVE_EXTENDED){
         if(!this.voiceText)this.actionsThisTurn.clear();
         this.voiceText+=input.text;
@@ -190,8 +191,13 @@ export class LiveBridge {
     if(input?.text || input?.finished || content?.turnComplete) this.scheduleVoiceCommand(session);
     const status=content?.interactionStatus ?? msg.interactionStatus;
     if(status==='IN_PROGRESS' && !this.recording) this.onState('busy');
-    if(status==='IDLE' || (content?.turnComplete && this.model===LIVE_FAST)) this.onState(this.recording?'listening':'ready');
-    if(content?.outputTranscription?.text) this.onText('Ponto',content.outputTranscription.text);
+    if(content?.outputTranscription?.text) this.onText('Ponto',content.outputTranscription.text,{stream:true});
+    if(input?.finished)this.onTurnEnd?.('Você');
+    // Extended can send several generation/turn completions while still processing one request.
+    if(status==='IDLE' || (content?.turnComplete && !status && this.model===LIVE_FAST)){
+      this.onTurnEnd?.();
+      this.onState(this.recording?'listening':'ready');
+    }
     for(const part of content?.modelTurn?.parts ?? []) {
       if(part.inlineData?.data && part.inlineData.mimeType?.startsWith('audio/') && this.allowAudio?.()!==false) {
         this.playAudio(part.inlineData.data,part.inlineData.mimeType);
@@ -265,11 +271,13 @@ export class LiveBridge {
   sendText(text) {
     if(!this.connected||!this.session) throw new Error('Conecte o assistente primeiro.');
     clearTimeout(this.voiceCommandTimer);this.voiceText='';this.actionsThisTurn.clear();
+    this.onTurnEnd?.();
     this.onText('Você',text);
     this.session.sendRealtimeInput({text});
   }
   narrate(text) {
     this.stopPlayback();
+    this.onTurnEnd?.();
     this.session.sendRealtimeInput({text:'[Leitura de acessibilidade]\n'+text});
   }
   noteSiteAction(text) {
@@ -277,6 +285,7 @@ export class LiveBridge {
   }
   disconnect() {
     this.sessionId++;
+    this.onTurnEnd?.();
     this.opening?.controller.abort();this.opening=null;
     clearTimeout(this.voiceCommandTimer);this.voiceText='';this.actionsThisTurn.clear();
     this.stopMicrophone();this.stopPlayback();

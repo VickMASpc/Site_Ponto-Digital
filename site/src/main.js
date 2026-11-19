@@ -342,6 +342,7 @@ async function runSiteCommand(text,completed=new Set()){
  if(!command)return false;
  const actions=[];
  const session=bridge.session;
+ const {model,thinking}=state;
  if(command.page && state.page!==command.page && !completed.has('navigate_to')){
    const result=await executeTool('navigate_to',{page:command.page});
    if(result.success)actions.push('Página aberta: '+result.page+'.');
@@ -349,7 +350,15 @@ async function runSiteCommand(text,completed=new Set()){
  if(command.read && !completed.has('read_page') && !completed.has('read_section')){
    const result=await executeTool(command.section?'read_section':'read_page',{section:command.section});
    if(result.success)actions.push('Leitura local iniciada na página '+result.page+'.');
-   else notify(result.error);
+   else if(result.text && bridge.session===session && state.model===model && state.thinking===thinking){
+     try {
+       if(await bridge.connect(model,thinking)){
+         if(actions.length)bridge.noteSiteAction(actions.join(' '));
+         bridge.narrate(result.text);
+         return true;
+       }
+     } catch(error){notify(result.error+' '+error.message);}
+   } else if(bridge.session===session)notify(result.error);
  }
  if(actions.length && bridge.session===session)bridge.noteSiteAction(actions.join(' '));
  return true;

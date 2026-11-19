@@ -32,6 +32,7 @@ Se o usuário pedir uma alteração que não há ferramenta para executar, expli
 Use navigate_to por iniciativa própria quando mostrar a página correspondente ajudar na tarefa do visitante. Por exemplo, se ele quiser explorar soluções B2B ou perguntar onde ajustar o tamanho do texto, abra Soluções ou Acessibilidade. Use get_page_content para uma pergunta que só exige informação, sem mudar a página à toa.
 Use read_page ou read_section para iniciar o narrador local quando o visitante quiser ouvir a página ou quando a leitura for pertinente a um pedido de ajuda para acompanhar a tela. Para abrir e ler, chame navigate_to primeiro e read_page depois, ou envie as duas chamadas nessa ordem. Não solicite outro clique. Se o narrador começar, deixe-o ler sem recitar o mesmo texto. Se a ferramenta informar que o navegador bloqueou a leitura, use o conteúdo retornado para ler pela voz do Gemini. Resuma somente quando a pessoa pedir um resumo.
 As mensagens de contexto que começam com [Ponto Digital] registram ações realizadas pela interface. Use-as apenas para acompanhar o estado da página.
+Quando receber [Leitura de acessibilidade], o narrador local está indisponível. Leia o conteúdo que vem após a primeira linha, em voz alta, fielmente e sem chamar ferramentas. Comece diretamente pelo conteúdo.
 `;
 
 function encodePCM(samples, sampleRate) {
@@ -180,11 +181,13 @@ export class LiveBridge {
     }
     const input=content?.inputTranscription;
     if(input?.text) {
-      if(!this.voiceText) {clearTimeout(this.voiceCommandTimer);this.actionsThisTurn.clear();}
       this.onText('Você',input.text);
-      this.voiceText+=input.text;
+      if(this.model===LIVE_EXTENDED){
+        if(!this.voiceText)this.actionsThisTurn.clear();
+        this.voiceText+=input.text;
+      }
     }
-    if(input?.finished || content?.turnComplete) this.scheduleVoiceCommand(session);
+    if(input?.text || input?.finished || content?.turnComplete) this.scheduleVoiceCommand(session);
     const status=content?.interactionStatus ?? msg.interactionStatus;
     if(status==='IN_PROGRESS' && !this.recording) this.onState('busy');
     if(status==='IDLE' || (content?.turnComplete && this.model===LIVE_FAST)) this.onState(this.recording?'listening':'ready');
@@ -210,13 +213,12 @@ export class LiveBridge {
     }
   }
   scheduleVoiceCommand(session) {
-    const text=this.voiceText.trim();
-    if(!text) return;
-    this.voiceText='';
-    if(this.model!==LIVE_EXTENDED) return;
+    if(!this.voiceText.trim()) return;
     clearTimeout(this.voiceCommandTimer);
     this.voiceCommandTimer=setTimeout(()=>{
       if(session!==this.session) return;
+      const text=this.voiceText.trim();
+      this.voiceText='';
       const actions=new Set(this.actionsThisTurn);
       this.actionsThisTurn.clear();
       this.onVoiceCommand?.(text,actions);
@@ -265,6 +267,10 @@ export class LiveBridge {
     clearTimeout(this.voiceCommandTimer);this.voiceText='';this.actionsThisTurn.clear();
     this.onText('Você',text);
     this.session.sendRealtimeInput({text});
+  }
+  narrate(text) {
+    this.stopPlayback();
+    this.session.sendRealtimeInput({text:'[Leitura de acessibilidade]\n'+text});
   }
   noteSiteAction(text) {
     if(this.connected) this.session.sendClientContent({turns:[{role:'model',parts:[{text:'[Ponto Digital] '+text}]}],turnComplete:false});

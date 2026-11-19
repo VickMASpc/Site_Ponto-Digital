@@ -1,5 +1,5 @@
 import { GoogleGenAI, Modality } from '@google/genai';
-import { NAV } from './data.js';
+import { NAV, pageText } from './data.js';
 
 export const LIVE_FAST = 'gemini-3.8-live';
 export const LIVE_EXTENDED = 'gemini-3.8-live-extended-thinking';
@@ -8,9 +8,10 @@ const pageParameter = {type:'STRING',enum:pages};
 
 const tools = [{
   functionDeclarations: [
-    {name:'navigate_to',description:'Abrir uma página real do site, mover o foco para seu título e iniciar a leitura automaticamente.',parameters:{type:'OBJECT',properties:{page:pageParameter,readAloud:{type:'BOOLEAN',description:'Use false quando a pessoa pedir navegação em silêncio.'}},required:['page']}},
+    {name:'navigate_to',description:'Abrir uma página real do site e mover o foco para seu título.',parameters:{type:'OBJECT',properties:{page:pageParameter},required:['page']}},
     {name:'get_page_content',description:'Receber título e conteúdo de uma página ou da página atual para explicar ou resumir.',parameters:{type:'OBJECT',properties:{page:{type:'STRING',description:'ID opcional da página; por padrão a atual'}}}},
-    {name:'read_page',description:'Iniciar imediatamente o narrador local para ler a página atual em voz alta.'},
+    {name:'read_page',description:'Iniciar imediatamente a leitura da página atual em voz alta.'},
+    {name:'stop_reading',description:'Interromper a leitura em andamento.'},
     {name:'read_section',description:'Iniciar imediatamente o narrador local para ler uma seção da página atual em voz alta.',parameters:{type:'OBJECT',properties:{section:{type:'STRING',description:'Nome ou parte do título da seção'}}}},
     {name:'summarize_section',description:'Obter o texto de uma seção a ser resumido em voz alta.',parameters:{type:'OBJECT',properties:{section:{type:'STRING'}}}},
     {name:'get_navigation_options',description:'Listar todas as páginas disponíveis.'},
@@ -24,16 +25,17 @@ const tools = [{
 
 const instructions = `Você é o guia de voz do próprio site Ponto Digital, no idioma português brasileiro.
 Converse naturalmente com visitantes. Seja objetivo, gentil, proativo e profundamente útil para pessoas cegas ou com baixa visão.
-Você tem ferramentas para navegar, ler o conteúdo REAL da página e configurar a interface. Use-as para ações e para consultar fatos do site; nunca finja ter executado algo.
 Diferencie a atividade principal da Ponto Digital (desenvolvimento B2B) de conceitos de produtos em avaliação. ERP e gestão de contratos são ideias, não produtos comerciais comprovadamente lançados.
 Dê descrições úteis de onde o usuário está após a navegação. Não invente preços, endereço exato, clientes, certificações WCAG ou impacto ecológico.
 O site funciona com teclas, leitura local e outras rotas mesmo sem você. Não instrua usuários a expor uma chave de API.
 Se o usuário pedir uma alteração que não há ferramenta para executar, explique a limitação em vez de afirmar sucesso.
-Use navigate_to por iniciativa própria quando mostrar a página correspondente ajudar na tarefa do visitante. Por exemplo, se ele quiser explorar soluções B2B ou perguntar onde ajustar o tamanho do texto, abra Soluções ou Acessibilidade. Use get_page_content para uma pergunta que só exige informação, sem mudar a página à toa.
-Use read_page ou read_section para iniciar o narrador local quando o visitante quiser ouvir a página ou quando a leitura for pertinente a um pedido de ajuda para acompanhar a tela. O site já lê a página ao receber navigate_to. Para abrir uma página e ler somente uma seção, envie navigate_to seguido de read_section, usando readAloud false na navegação. Não solicite outro clique. O site inicia a voz do Gemini automaticamente se o narrador local falhar. Deixe a leitura terminar sem repetir o conteúdo. Resuma somente quando a pessoa pedir um resumo.
 As mensagens de contexto que começam com [Ponto Digital] registram ações realizadas pela interface. Use-as apenas para acompanhar o estado da página.
 Quando receber [Leitura de acessibilidade], o narrador local está indisponível. Leia o conteúdo que vem após a primeira linha, em voz alta, fielmente e sem chamar ferramentas. Comece diretamente pelo conteúdo.
 `;
+
+const nativeGuideInstructions = `Use as ferramentas para navegar, ler e configurar a interface. Decida pela conversa quando abrir uma página e quando começar a leitura. Quando guiar alguém até conteúdo útil, inicie a leitura com read_page ou read_section se for pertinente, depois de navegar. Se abrir e ler, envie as chamadas na ordem. Respeite pedidos de silêncio. Se a pessoa só quiser uma informação, responda onde ela está. Após uma chamada de leitura, deixe o site ler sem repetir o conteúdo.`;
+const extendedGuideInstructions = `Outro Gemini da mesma interface decide as ações de navegação, leitura e preferências. Registros [Ponto Digital] já descrevem o que o site fez. Não prometa ou confirme ações que a interface não registrou. Se a pessoa estiver pedindo apenas uma ação de interface, aguarde a execução sem fazer comentários. Para perguntas sobre a Ponto Digital, use o conteúdo abaixo para responder.
+${NAV.map(({id,label})=>label+': '+pageText(id)).join('\n')}`;
 
 function encodePCM(samples, sampleRate) {
   const outLength = Math.floor(samples.length * 16000 / sampleRate);
@@ -72,7 +74,7 @@ export class LiveBridge {
     this.model=null;
     this.nextOutputSegment=false;
     this.narration=null;this.narrationTimer=null;this.narrationIdle=false;this.silenceOutput=false;
-    this.voiceText=''; this.voiceCommandTimer=null; this.actionsThisTurn=new Set();
+    this.voiceText=''; this.voiceCommandTimer=null; this.hideReply=false;
   }
   async connect(model,level) {
     if(this.connected) return true;
@@ -97,11 +99,10 @@ export class LiveBridge {
       controller.signal.throwIfAborted();
       const client=new GoogleGenAI({apiKey:payload.token,httpOptions:{apiVersion:'v1beta'}});
       const extended=model===LIVE_EXTENDED;
-      const functionDeclarations=tools[0].functionDeclarations.map(tool=>extended?{...tool,behavior:'NON_BLOCKING'}:tool);
       const config={
         responseModalities:[Modality.AUDIO],
-        systemInstruction:instructions,
-        tools:[{functionDeclarations}],
+        systemInstruction:instructions+(extended?extendedGuideInstructions:nativeGuideInstructions),
+        ...(extended?{}:{tools}),
         inputAudioTranscription:{},
         outputAudioTranscription:{},
         speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:'Aoede'}}}
@@ -185,22 +186,19 @@ export class LiveBridge {
       this.onTurnEnd?.();
       clearTimeout(this.voiceCommandTimer);
       this.voiceText='';
-      this.actionsThisTurn.clear();
       this.onVoiceInput?.();
     }
     const input=content?.inputTranscription;
     if(input?.text) {
       this.silenceOutput=false;
+      this.hideReply=false;
       this.onText('Você',input.text,{stream:true});
-      if(this.model===LIVE_EXTENDED){
-        if(!this.voiceText)this.actionsThisTurn.clear();
-        this.voiceText+=input.text;
-      }
+      if(this.model===LIVE_EXTENDED)this.voiceText+=input.text;
     }
     if(input?.text || input?.finished || content?.turnComplete) this.scheduleVoiceCommand(session);
     const status=content?.interactionStatus ?? msg.interactionStatus;
     if(status==='IN_PROGRESS' && !this.recording) this.onState('busy');
-    if(content?.outputTranscription?.text){
+    if(!this.hideReply && content?.outputTranscription?.text){
       this.onText('Ponto',content.outputTranscription.text,{stream:true,newSegment:this.nextOutputSegment});
       this.nextOutputSegment=false;
     }
@@ -221,13 +219,12 @@ export class LiveBridge {
       this.narrationIdle=true;
       if(!this.scheduled.size)this.setNarration(null);
     }
-    if(msg.toolCall?.functionCalls?.length) {
+    if(this.model===LIVE_FAST && msg.toolCall?.functionCalls?.length) {
       const functionResponses=[];
       for(const {id,name,args} of msg.toolCall.functionCalls) {
         if(session!==this.session) return;
         try {
           const result=await this.onTool(name,args||{});
-          if(result?.success) this.actionsThisTurn.add(name);
           functionResponses.push({id,name,response:{result}});
         } catch(error){
           functionResponses.push({id,name,response:{error:String(error.message||error)}});
@@ -235,7 +232,7 @@ export class LiveBridge {
       }
       if(session===this.session){
         session.sendToolResponse({functionResponses});
-        if(this.onToolsComplete?.(functionResponses))this.actionsThisTurn.add('read_page');
+        this.onToolsComplete?.(functionResponses);
       }
     }
   }
@@ -246,9 +243,7 @@ export class LiveBridge {
       if(session!==this.session) return;
       const text=this.voiceText.trim();
       this.voiceText='';
-      const actions=new Set(this.actionsThisTurn);
-      this.actionsThisTurn.clear();
-      this.onVoiceCommand?.(text,actions);
+      this.onVoiceCommand?.(text);
     },1800);
   }
   async startMicrophone() {
@@ -289,13 +284,20 @@ export class LiveBridge {
       this.onState('ready');
     }
   }
-  sendText(text) {
+  sendText(text,{display=true}={}) {
     if(!this.connected||!this.session) throw new Error('Conecte o assistente primeiro.');
-    clearTimeout(this.voiceCommandTimer);this.voiceText='';this.actionsThisTurn.clear();
+    clearTimeout(this.voiceCommandTimer);this.voiceText='';
     this.onTurnEnd?.();
-    this.onText('Você',text);
+    if(display)this.onText('Você',text);
     this.silenceOutput=false;
+    this.hideReply=false;
     this.session.sendRealtimeInput({text});
+  }
+  muteReply() {
+    this.silenceOutput=true;
+    this.hideReply=true;
+    this.stopPlayback();
+    this.onTurnEnd?.('Ponto');
   }
   setNarration(value) {
     clearTimeout(this.narrationTimer);
@@ -312,6 +314,7 @@ export class LiveBridge {
     this.stopPlayback();
     this.onTurnEnd?.();
     this.silenceOutput=false;
+    this.hideReply=false;
     this.narrationIdle=false;
     this.setNarration('pending');
     this.narrationTimer=setTimeout(()=>{
@@ -327,10 +330,10 @@ export class LiveBridge {
     this.sessionId++;
     this.onTurnEnd?.();
     this.opening?.controller.abort();this.opening=null;
-    clearTimeout(this.voiceCommandTimer);this.voiceText='';this.actionsThisTurn.clear();
+    clearTimeout(this.voiceCommandTimer);this.voiceText='';
     this.stopMicrophone();this.cancelNarration();this.stopPlayback();
     try{this.session?.close()}catch{}
-    this.session=null;this.connected=false;this.model=null;
+    this.session=null;this.connected=false;this.model=null;this.hideReply=false;this.silenceOutput=false;
     this.outputContext?.close().catch(()=>{});this.outputContext=null;
     this.onState('offline');
   }

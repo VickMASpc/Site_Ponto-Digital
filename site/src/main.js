@@ -44,11 +44,13 @@ const state={
 let holdRequested=false, speaking=false, speechQueue=[],speechVersion=0;
 let agentNarration=null, speechStart=null;
 let readingVersion=0, narrationState=null;
+let guideRequest=null, guideThinking=false, readingEnded=null;
 const streamingActivity=new Map();
 let activityId=0;
 const $=(id)=>document.getElementById(id);
 const persist=(key,value)=>{try{localStorage.setItem('pd.'+key,JSON.stringify(value));}catch{}};
 function statusText(){
+ if(guideThinking)return 'Gemini está decidindo como ajudar…';
  return {offline:'Assistente desconectado',connecting:'Conectando ao Gemini…',ready:'Conectado — pronto para conversar',listening:'Ouvindo você…',busy:'Processando sua solicitação…'}[state.status]||'';
 }
 const bridge=new LiveBridge({
@@ -63,10 +65,7 @@ const bridge=new LiveBridge({
    syncReadingStatus();
    if(value==='failed')notify('O Gemini não iniciou a leitura em voz alta. O conteúdo está disponível na página.');
  },
- onVoiceCommand(text,completed){
-   const command=siteCommand(text);
-   if(command)runSiteCommand(command,{completed}).catch(e=>notify(e.message));
- },
+ onVoiceCommand(text){handleGuideTurn(text,{voice:true}).catch(error=>notify(error.message));},
  onVoiceInput(){if(agentNarration)stopReading();},
  allowAudio(source){
    // O microfone não deve enviar a voz do próprio narrador para o Gemini.
@@ -100,6 +99,7 @@ function syncReadingStatus(){
  const label=$('tts-indicator');
  const text=readingStatus();
  if(label && label.textContent!==text)label.textContent=text;
+ if(!text)readingEnded?.();
 }
 function stopReading(){
  ++readingVersion;
@@ -388,35 +388,98 @@ function resolvePage(text){
  const page=normalizeText(text).replace(/^#/,'');
  return NAV.find(({id,label})=>id===page||normalizeText(label)===page)?.id;
 }
-const pageNames=new RegExp('\\b(?:'+NAV.map(({id})=>id).join('|')+')\\b');
-function siteCommand(text){
- const normalized=normalizeText(text).replace(/[,.!?]+/g,' ').replace(/\s+/g,' ').trim();
- const silent=normalized.match(/\s+(?:(?:e )?sem (?:ler|narrar|leitura|audio|som|voz)|em silencio|(?:e )?nao (?:leia|narre|fale))$/);
- const command=silent?normalized.slice(0,silent.index):normalized;
- if(/^onde (?:ajusto|mudo|altero|aumento|diminuo) (?:o tamanho (?:da fonte|do texto)|o contraste)$/.test(command))return {page:'acessibilidade',read:!silent};
- if(/^(?:preciso de ajuda para acompanhar|nao consigo ler) (?:a pagina|a tela|o texto)(?: atual)?$/.test(command))return {read:true};
- if(!command || /\b(?:nao|nunca|sem|evite)\b/.test(command))return null;
- const page=command.match(pageNames)?.[0];
- const go=/^(?:por favor )?(?:(?:voce pode|pode) )?(?:(?:me )?(?:abra|abre|abrir|mostre|mostra|mostrar|leve|leva|levar)|(?:abra|mostre|leve)[ -]me|navegue|va|ir para|quero (?:ver|conhecer|explorar|ir|abrir)|gostaria de (?:ver|conhecer|explorar|abrir))\b/.test(command);
- const read=/^(?:(?:por favor|voce pode|pode) )?(?:leia|ler|le|quero (?:ouvir|escutar)|gostaria de (?:ouvir|escutar))\b/.test(command);
- const readAfterNavigation=go&&/\be (?:leia|le|inicie a leitura)\b/.test(command);
- const section=command.match(/\bsecao\s+(?:sobre\s+|de\s+|do\s+|da\s+)?(.+)$/)?.[1];
- if(go&&page)return {page,read:!silent,section:readAfterNavigation?section:undefined};
- if(read && (page || /\b(?:pagina|tela|conteudo|texto|secao)\b/.test(command))){
-   return {page:section?undefined:page,read:true,section};
- }
- return null;
+function cancelGuideRequest(){
+ guideRequest?.abort();
+ guideRequest=null;
+ guideThinking=false;
+ syncLive();
 }
-async function runSiteCommand(command,{completed=new Set(),showConfirmation=false}={}){
- if(command.page && state.page!==command.page && !completed.has('navigate_to')){
-   await executeTool('navigate_to',{page:command.page});
+async function requestGuidePlan(text, history, signal){
+ const tokenEndpoint=import.meta.env.VITE_TOKEN_ENDPOINT || (location.hostname.endsWith('.github.io')?null:'/token');
+ if(!tokenEndpoint)throw new Error('Conversa Live não configurada no servidor. O narrador local continua disponível.');
+ const endpoint=new URL('guide',new URL(tokenEndpoint,location.href));
+ const response=await fetch(endpoint,{
+   method:'POST',headers:{'Content-Type':'application/json'},signal,
+   body:JSON.stringify({text,page:state.page,history})
+ });
+ const plan=await response.json().catch(()=>null);
+ if(!response.ok)throw new Error(plan?.error||'O Gemini não conseguiu decidir a ação.');
+ if(!Array.isArray(plan?.actions) || typeof plan.respond!=='boolean')throw new Error('O Gemini não devolveu uma decisão válida.');
+ return plan;
+}
+function waitForReading(signal){
+ if(!readingStatus() || signal.aborted)return Promise.resolve();
+ return new Promise(resolve=>{
+   const done=()=>{
+     signal.removeEventListener('abort',done);
+     if(readingEnded===done)readingEnded=null;
+     resolve();
+   };
+   readingEnded=done;
+   signal.addEventListener('abort',done,{once:true});
+ });
+}
+async function handleGuideTurn(text,{voice=false}={}){
+ cancelGuideRequest();
+ const request=new AbortController();
+ guideRequest=request;
+ guideThinking=true;
+ syncLive();
+ const {signal}=request;
+ const {model,thinking}=state;
+ const transcript=voice&&state.transcript.at(-1)?.who==='Você'?state.transcript.slice(0,-1):state.transcript;
+ const history=transcript.slice(-6)
+   .map(({who,text})=>({who,text:text.slice(0,360)}));
+ if(!voice){
+   finishActivity();
+   addActivity('Você',text);
  }
- if(showConfirmation && command.page===state.page){
-   addActivity('Ponto','Página '+NAV.find(({id})=>id===state.page).label+' aberta.');
- }
- if(command.page===state.page)bridge.noteSiteAction('Página aberta: '+state.page+'.');
- if(command.read && !completed.has('read_page') && !completed.has('read_section')){
-   await readForGuide(command.section);
+ try {
+   let plan;
+   try {plan=await requestGuidePlan(text.slice(0,1200),history,signal);}
+   catch(error){
+     if(signal.aborted)return;
+     notify(error.message||'O Gemini não conseguiu decidir a ação.');
+     plan={actions:[],respond:true};
+   }
+   if(signal.aborted)return;
+   guideThinking=false;
+   syncLive();
+   if(voice && plan.actions.length)bridge.muteReply();
+   for(const action of plan.actions){
+     if(signal.aborted)return;
+     if(action.name==='read_page' || action.name==='read_section'){
+       await readForGuide(action.section);
+       continue;
+     }
+     const result=await executeTool(action.name,action);
+     if(signal.aborted)return;
+     if(!result.success){notify(result.error);continue;}
+     if(action.name==='navigate_to'){
+       const label=NAV.find(({id})=>id===result.page).label;
+       addActivity('Ponto','Página '+label+' aberta.');
+       bridge.noteSiteAction('Página aberta: '+result.page+'.');
+     } else {
+       const summary={...result};
+       delete summary.success;
+       bridge.noteSiteAction('Ação realizada '+action.name+' '+JSON.stringify(summary));
+       if(action.name!=='stop_reading')addActivity('Ponto','Preferência atualizada.');
+     }
+   }
+   if(plan.respond && (!voice || plan.actions.length)){
+     await waitForReading(signal);
+     if(signal.aborted)return;
+     if(await bridge.connect(model,thinking) && !signal.aborted){
+       bridge.noteSiteAction('Página atual: '+state.page+'.');
+       bridge.sendText(text,{display:false});
+     }
+   }
+ } finally {
+   if(guideRequest===request){
+     guideRequest=null;
+     guideThinking=false;
+     syncLive();
+   }
  }
 }
 async function readForGuide(section,prepared){
@@ -454,10 +517,7 @@ function readAfterToolCalls(responses){
    }
    return false;
  }
- const navigation=responses.findLast(({name,response})=>name==='navigate_to' && response.result?.readsPage);
- if(navigation?.response.result.page!==state.page)return false;
- readForGuide();
- return true;
+ return false;
 }
 async function readWithNarrator(text,details){
  const request=readingVersion;
@@ -473,8 +533,9 @@ async function executeTool(name,args){
     if(!id)return {success:false,error:'Página inexistente',available:NAV.map(x=>x.id)};
     const changed=id!==state.page;
     if(changed)navigate(id);
-    return {success:true,page:id,title:CONTENT[id].title,description:CONTENT[id].description,readsPage:changed&&args.readAloud!==false};
+    return {success:true,page:id,title:CONTENT[id].title,description:CONTENT[id].description};
   }
+  case 'stop_reading':stopReading();return {success:true};
   case 'get_navigation_options':return NAV.map(x=>({page:x.id,label:x.label}));
   case 'get_page_content':{
     const id=args.page?resolvePage(args.page):state.page;
@@ -532,7 +593,7 @@ function setSetting(key,value){
  const focusedId=document.activeElement?.id;
  if(['font','rate'].includes(key))value=Number(value);
  if(key==='tts')value=Boolean(value);
- if((key==='model' || key==='thinking')&&state[key]!==value){stopReading();bridge.disconnect();}
+ if((key==='model' || key==='thinking')&&state[key]!==value){cancelGuideRequest();stopReading();bridge.disconnect();}
  if(key==='tts'&&!value)stopSpeech();
  state[key]=value;persist(key,value);render();
  if(focusedId)document.getElementById(focusedId)?.focus();
@@ -549,7 +610,7 @@ function setSetting(key,value){
 const app=$('app');
 app.addEventListener('click',event=>{
  const nav=event.target.closest('[data-nav]');
- if(nav){event.preventDefault();navigate(nav.dataset.nav);return;}
+ if(nav){event.preventDefault();cancelGuideRequest();navigate(nav.dataset.nav);bridge.noteSiteAction('Página atual: '+state.page+'.');return;}
  const read=event.target.closest('[data-read-section]');
  if(read){const section=CONTENT[state.page].sections[Number(read.dataset.readSection)];if(section)speak(section.title+'. '+section.body,{force:true});return;}
  const prompt=event.target.closest('[data-prompt]');
@@ -564,9 +625,9 @@ app.addEventListener('click',event=>{
   case 'read-page':speak(pageText(state.page),{force:true});break;
   case 'mic':if(ignoreMicClick){ignoreMicClick=false;break;} beginMicrophone();break;
   case 'activity':state.activity=!state.activity;render();break;
-  case 'disconnect':stopReading();bridge.disconnect();notify('Sessão encerrada.');break;
+  case 'disconnect':cancelGuideRequest();stopReading();bridge.disconnect();notify('Sessão encerrada.');break;
   case 'clear-demo':state.demo=[];render();announce('Simulação limpa.');break;
-  case 'stop-speech':stopReading();break;
+  case 'stop-speech':cancelGuideRequest();stopReading();break;
  }
 });
 app.addEventListener('pointerdown',event=>{
@@ -584,15 +645,13 @@ app.addEventListener('change',event=>{
 });
 async function sendChatMessage(text){
  if(state.notice===microphoneDenied)notify('');
- const command=siteCommand(text);
- if(command){
-   if(command.read)bridge.initOutput();
-   finishActivity();
-   addActivity('Você',text);
-   await runSiteCommand(command,{showConfirmation:true});
+ bridge.initOutput();
+ stopReading();
+ if(state.model===LIVE_EXTENDED){
+   await handleGuideTurn(text);
    return;
  }
- stopReading();
+ cancelGuideRequest();
  if(await bridge.connect(state.model,state.thinking))bridge.sendText(text);
 }
 app.addEventListener('submit',event=>{
@@ -610,7 +669,7 @@ app.addEventListener('submit',event=>{
 });
 window.addEventListener('keydown',event=>{
  if(event.key==='Escape'){
-   if(speaking || narrationState==='pending' || narrationState==='playing')stopReading();
+   if(guideRequest || speaking || narrationState==='pending' || narrationState==='playing'){cancelGuideRequest();stopReading();}
    else if(state.help||state.settings){closeDialog();}
    else if(state.menu||state.activity){state.menu=state.activity=false;render();}
    return;
@@ -638,9 +697,9 @@ window.addEventListener('keydown',event=>{
 window.addEventListener('keyup',event=>{
  if(event.key.toLowerCase()==='j'&&state.micMode==='hold'&&holdRequested){holdRequested=false;endMicrophone();}
 });
-function syncUrl(){const page=location.hash.slice(1)||'inicio';if(Object.hasOwn(CONTENT,page)&&page!==state.page)navigate(page,{historyMode:'none'});}
+function syncUrl(){const page=location.hash.slice(1)||'inicio';if(Object.hasOwn(CONTENT,page)&&page!==state.page){cancelGuideRequest();navigate(page,{historyMode:'none'});}}
 window.addEventListener('hashchange',syncUrl);
 window.addEventListener('popstate',syncUrl);
-window.addEventListener('pagehide',()=>{stopReading();bridge.disconnect();});
+window.addEventListener('pagehide',()=>{cancelGuideRequest();stopReading();bridge.disconnect();});
 render();
 setTimeout(()=>{if(state.tts&&!speaking&&!bridge.opening&&!bridge.connected)speak(introText());},600);

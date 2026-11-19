@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { NAV,CONTENT,pageText } from '../site/src/data.js';
 import { execFileSync } from 'node:child_process';
 for (const path of ['main.js','data.js','live.js','styles.css']) assert(existsSync('site/src/'+path), 'Missing '+path);
-for (const path of ['site/src/main.js','site/src/data.js','site/src/live.js','worker/worker.js']) {
+for (const path of ['site/src/main.js','site/src/data.js','site/src/live.js','worker/worker.js','worker/guide.js']) {
   const source=readFileSync(path,'utf8');
   assert(!/AIza[A-Za-z0-9_-]{30,}/.test(source), 'API key found in '+path);
   execFileSync(process.execPath,['--check',path],{stdio:'pipe'});
@@ -27,7 +27,7 @@ assert(styles.includes('--teal:#155bd4') && styles.includes('.business-art'), 'B
 assert(html.includes('lang="pt-BR"') && html.includes('href="#main"'), 'Language and skip link required');
 const wrangler=readFileSync('wrangler.toml','utf8');
 assert(wrangler.includes('name = "site-ponto-digital"'),'Worker project name must match Cloudflare');
-assert(wrangler.includes('directory = "./docs"') && wrangler.includes('run_worker_first = ["/token"]'),'Worker assets and API route must be configured');
+assert(wrangler.includes('directory = "./docs"') && wrangler.includes('run_worker_first = ["/token", "/guide"]'),'Worker assets and API route must be configured');
 assert(wrangler.includes('main = "worker/worker.js"'),'Worker entrypoint must be from repository root');
 const okOrigin=await worker.fetch(new Request('https://site-ponto-digital.example.workers.dev/token',{method:'POST',headers:{Origin:'https://site-ponto-digital.example.workers.dev','Content-Type':'application/json'},body:'{}'}),{SITE_ORIGIN:'https://vickmaspc.github.io'});
 assert.equal(okOrigin.status,503,'Worker should accept same-origin and reject if the API secret is unconfigured');
@@ -50,4 +50,25 @@ try {
   assert(!JSON.stringify(diagnosis).includes('synthetic-test-key'),'Never expose server key');
   assert.deepEqual(observedPayload,{uses:1},'Token issuance must use the minimal documented payload');
 } finally {globalThis.fetch=oldFetch;}
-console.log('Syntax, accessibility, Worker config, minimal token body, sanitized 400 diagnostics and origin tests passed.');
+const guideRequest=()=>new Request('https://example.workers.dev/guide',{
+  method:'POST',headers:{Origin:'https://example.workers.dev','Content-Type':'application/json'},
+  body:JSON.stringify({text:'Me mostre as soluções da empresa.',page:'inicio',history:[]})
+});
+const guideEnv={...testEnv,GUIDE_RATE_LIMIT:testEnv.RATE_LIMIT};
+try {
+  let decision={actions:[{name:'navigate_to',page:'empresa'}],respond:false};
+  globalThis.fetch=async (url,options)=>{
+    assert(String(url).endsWith('/gemini-3.8-flash:generateContent'));
+    const payload=JSON.parse(options.body);
+    const input=JSON.parse(payload.contents[0].parts[0].text);
+    assert.equal(input.text,'Me mostre as soluções da empresa.');
+    return Response.json({candidates:[{content:{parts:[{text:JSON.stringify(decision)}]}}]});
+  };
+  const planned=await worker.fetch(guideRequest(),guideEnv);
+  assert.equal(planned.status,200);
+  assert.deepEqual(await planned.json(),decision,'Browser executes the model decision as returned');
+  decision={actions:[{name:'navigate_to',page:'https://invalid.example/'}],respond:false};
+  assert.equal((await worker.fetch(guideRequest(),guideEnv)).status,502,'Reject unregistered destinations');
+  assert.equal((await worker.fetch(guideRequest(),{...guideEnv,GUIDE_RATE_LIMIT:{limit:async()=>({success:false})}})).status,429);
+} finally {globalThis.fetch=oldFetch;}
+console.log('Syntax, accessibility, Worker config, session tokens, Gemini guide decision and bounds tests passed.');

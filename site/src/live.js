@@ -69,6 +69,7 @@ export class LiveBridge {
     this.outputContext=null; this.nextPlayTime=0; this.scheduled=new Set();
     this.opening=null; this.sessionId=0;
     this.model=null;
+    this.nextOutputSegment=false;
     this.voiceText=''; this.voiceCommandTimer=null; this.actionsThisTurn=new Set();
   }
   async connect(model,level) {
@@ -191,7 +192,11 @@ export class LiveBridge {
     if(input?.text || input?.finished || content?.turnComplete) this.scheduleVoiceCommand(session);
     const status=content?.interactionStatus ?? msg.interactionStatus;
     if(status==='IN_PROGRESS' && !this.recording) this.onState('busy');
-    if(content?.outputTranscription?.text) this.onText('Ponto',content.outputTranscription.text,{stream:true});
+    if(content?.outputTranscription?.text){
+      this.onText('Ponto',content.outputTranscription.text,{stream:true,newSegment:this.nextOutputSegment});
+      this.nextOutputSegment=false;
+    }
+    if(content?.generationComplete || content?.turnComplete)this.nextOutputSegment=true;
     if(input?.finished)this.onTurnEnd?.('Você');
     // Extended can send several generation/turn completions while still processing one request.
     if(status==='IDLE' || (content?.turnComplete && !status && this.model===LIVE_FAST)){

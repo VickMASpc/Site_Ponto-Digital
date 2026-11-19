@@ -130,14 +130,15 @@ function speak(text,{force=false,agent=false}={}){
  next();
  return started;
 }
-function addActivity(who,text,{stream=false}={}) {
+function addActivity(who,text,{stream=false,newSegment=false}={}) {
  if(!text)return;
  const list=$('activity-list');
  const atBottom=list && list.scrollHeight-list.scrollTop-list.clientHeight<48;
  const active=stream?streamingActivity.get(who):null;
  if(active){
-   // Preserve whitespace and punctuation in the Gemini transcription deltas.
-   active.text+=text;
+   // Deltas inside a segment carry their own whitespace. New segments may omit it.
+   const separator=newSegment && !/\s$/.test(active.text) && /^\S/.test(text)?' ':'';
+   active.text+=separator+text;
    const paragraph=$('activity-'+active.id)?.querySelector('p');
    if(paragraph)paragraph.textContent=active.text;
  } else {

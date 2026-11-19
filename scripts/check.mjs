@@ -1,10 +1,9 @@
 import { readFileSync, existsSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { NAV,CONTENT,pageText } from '../site/src/data.js';
-import {normalizeGuidePlan} from '../site/src/guide-actions.js';
 import { execFileSync } from 'node:child_process';
 for (const path of ['main.js','data.js','live.js','styles.css']) assert(existsSync('site/src/'+path), 'Missing '+path);
-for (const path of ['site/src/main.js','site/src/data.js','site/src/live.js','site/src/guide-actions.js','worker/worker.js']) {
+for (const path of ['site/src/main.js','site/src/data.js','site/src/live.js','worker/worker.js']) {
   const source=readFileSync(path,'utf8');
   assert(!/AIza[A-Za-z0-9_-]{30,}/.test(source), 'API key found in '+path);
   execFileSync(process.execPath,['--check',path],{stdio:'pipe'});
@@ -51,10 +50,21 @@ try {
   assert(!JSON.stringify(diagnosis).includes('synthetic-test-key'),'Never expose server key');
   assert.deepEqual(observedPayload,{uses:1},'Token issuance must use the minimal documented payload');
 } finally {globalThis.fetch=oldFetch;}
-assert.deepEqual(normalizeGuidePlan({respond:false,actions:[{name:'navigate_to',page:'solucoes'}]}),
-  {respond:false,actions:[{name:'navigate_to',page:'solucoes'}]},'Navigation does not implicitly add narration');
-assert.deepEqual(normalizeGuidePlan({respond:false,actions:[{name:'read_page',page:'solucoes'}]}),
-  {respond:false,actions:[{name:'read_page'}]},'Preserve the requested reading action and ignore unrelated fields');
-assert.equal(normalizeGuidePlan({respond:false,actions:[{name:'navigate_to',page:'https://invalid.example/'}]}),
-  null,'Unknown destinations must be rejected');
-console.log('Syntax, accessibility, Worker config, session tokens, Gemini decision validation and origin tests passed.');
+const {LiveBridge,LIVE_EXTENDED}=await import('../site/src/live.js');
+const responses=[];
+const bridge=new LiveBridge({
+  onState:()=>{},
+  onTool:async(name,args)=>({name,args}),
+  onError:error=>{throw new Error(error);}
+});
+bridge.model=LIVE_EXTENDED;
+bridge.session={sendToolResponse:response=>responses.push(response)};
+await bridge.processMessage({serverContent:{turnComplete:true,interactionStatus:'IN_PROGRESS'}});
+await bridge.processMessage({toolCall:{functionCalls:[{
+  id:'extended-tool-test',name:'navigate_to',args:{page:'solucoes',readAloud:true}
+}]}});
+assert.deepEqual(responses,[{functionResponses:[{
+  id:'extended-tool-test',name:'navigate_to',
+  response:{result:{name:'navigate_to',args:{page:'solucoes',readAloud:true}}}
+}]}],'Extended executes late native calls on the active session and preserves the call ID');
+console.log('Syntax, accessibility, Worker config, session tokens, native Extended tools and origin tests passed.');

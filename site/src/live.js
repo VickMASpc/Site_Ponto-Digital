@@ -1,6 +1,5 @@
 import { GoogleGenAI, Modality } from '@google/genai';
-import { NAV, pageText } from './data.js';
-import { guideInstructions, guideSchema, normalizeGuidePlan } from './guide-actions.js';
+import { NAV } from './data.js';
 
 export const LIVE_FAST = 'gemini-3.8-live';
 export const LIVE_EXTENDED = 'gemini-3.8-live-extended-thinking';
@@ -9,11 +8,20 @@ const pageParameter = {type:'STRING',enum:pages};
 
 const tools = [{
   functionDeclarations: [
-    {name:'navigate_to',description:'Abrir uma página real do site e mover o foco para seu título.',parameters:{type:'OBJECT',properties:{page:pageParameter},required:['page']}},
+    {
+      name:'navigate_to',
+      description:'Abrir uma página real. Para abrir e ler, decida ambas as ações nesta chamada com readAloud true.',
+      parameters:{type:'OBJECT',required:['page'],properties:{
+        page:pageParameter,
+        readAloud:{type:'BOOLEAN',description:'Ativa a leitura da página após abrir. O padrão é false.'},
+        section:{type:'STRING',description:'Título da seção a ler no lugar da página inteira, quando readAloud for true.'},
+        silent:{type:'BOOLEAN',description:'Use true se o visitante pedir para navegar em silêncio, inclusive sem confirmação falada.'}
+      }}
+    },
     {name:'get_page_content',description:'Receber título e conteúdo de uma página ou da página atual para explicar ou resumir.',parameters:{type:'OBJECT',properties:{page:{type:'STRING',description:'ID opcional da página; por padrão a atual'}}}},
     {name:'read_page',description:'Iniciar imediatamente a leitura da página atual em voz alta.'},
     {name:'stop_reading',description:'Interromper a leitura em andamento.'},
-    {name:'read_section',description:'Iniciar imediatamente o narrador local para ler uma seção da página atual em voz alta.',parameters:{type:'OBJECT',properties:{section:{type:'STRING',description:'Nome ou parte do título da seção'}}}},
+    {name:'read_section',description:'Iniciar imediatamente o narrador local para ler uma seção da página atual em voz alta.',parameters:{type:'OBJECT',properties:{section:{type:'STRING',description:'Nome ou parte do título da seção'}},required:['section']}},
     {name:'summarize_section',description:'Obter o texto de uma seção a ser resumido em voz alta.',parameters:{type:'OBJECT',properties:{section:{type:'STRING'}}}},
     {name:'get_navigation_options',description:'Listar todas as páginas disponíveis.'},
     {name:'set_theme',description:'Alterar o tema visual.',parameters:{type:'OBJECT',properties:{theme:{type:'STRING',description:'light, dark ou contrast'}},required:['theme']}},
@@ -31,24 +39,9 @@ Dê descrições úteis de onde o usuário está após a navegação. Não inven
 O site funciona com teclas, leitura local e outras rotas mesmo sem você. Não instrua usuários a expor uma chave de API.
 Se o usuário pedir uma alteração que não há ferramenta para executar, explique a limitação em vez de afirmar sucesso.
 As mensagens de contexto que começam com [Ponto Digital] registram ações realizadas pela interface. Use-as apenas para acompanhar o estado da página.
-Quando receber [Leitura de acessibilidade], o narrador local está indisponível. Leia o conteúdo que vem após a primeira linha, em voz alta, fielmente e sem chamar ferramentas. Comece diretamente pelo conteúdo.
+Use as ferramentas para executar ações. Se levar o visitante até conteúdo útil, decida se também deve lê-lo. Quando for abrir e ler, chame navigate_to uma vez com readAloud true. Use section junto com readAloud para ler somente a seção indicada. Ao mostrar uma página a quem navega por voz, a leitura costuma ajudar. Respeite pedidos de silêncio com silent true e sem confirmação falada. Perguntas de informação podem ser respondidas sem trocar de página. Para ler a página atual, use read_page ou read_section.
+Faça a chamada antes de afirmar que executou uma ação. Quando a ferramenta confirmar a leitura local, deixe-a tocar. Quando o resultado de leitura (ou result.narration) contiver text para leitura por voz do Gemini, leia esse conteúdo na própria resposta à ferramenta, sem pedir outra ação do visitante. Quando o resultado informar cancelamento, interrompa a leitura.
 `;
-
-const nativeGuideInstructions = `Use as ferramentas para navegar, ler e configurar a interface. Decida pela conversa quando abrir uma página e quando começar a leitura. Quando guiar alguém até conteúdo útil, inicie a leitura com read_page ou read_section se for pertinente, depois de navegar. Se abrir e ler, envie as chamadas na ordem. Respeite pedidos de silêncio. Se a pessoa só quiser uma informação, responda onde ela está. Após uma chamada de leitura, deixe o site ler sem repetir o conteúdo.`;
-const extendedGuideInstructions = `Outro Gemini da mesma interface decide as ações de navegação, leitura e preferências. Registros [Ponto Digital] já descrevem o que o site fez. Não prometa ou confirme ações que a interface não registrou. Se a pessoa estiver pedindo apenas uma ação de interface, aguarde a execução sem fazer comentários. Para perguntas sobre a Ponto Digital, use o conteúdo abaixo para responder.
-${NAV.map(({id,label})=>label+': '+pageText(id)).join('\n')}`;
-
-function functionSchema({type,properties,items,...schema}) {
-  return {
-    ...schema,type:type.toUpperCase(),
-    ...(properties?{properties:Object.fromEntries(Object.entries(properties).map(([name, value])=>[name,functionSchema(value)]))}:{}),
-    ...(items?{items:functionSchema(items)}:{})
-  };
-}
-const planTools=[{functionDeclarations:[{
-  name:'submit_plan',description:'Devolver a decisão sobre a última fala, mesmo se ações estiver vazio.',
-  parameters:functionSchema(guideSchema)
-}]}];
 
 function encodePCM(samples, sampleRate) {
   const outLength = Math.floor(samples.length * 16000 / sampleRate);
@@ -76,11 +69,10 @@ function decodePCM(base64) {
 }
 
 export class LiveBridge {
-  constructor({onState,onText,onTurnEnd,onTool,onToolsComplete,onNarration,onError,allowAudio,onVoiceCommand,onVoiceInput,planning=false}) {
+  constructor({onState,onText,onTurnEnd,onTool,onToolsComplete,onNarration,onError,allowAudio,onVoiceInput}) {
     this.onState=onState; this.onText=onText; this.onTurnEnd=onTurnEnd; this.onTool=onTool; this.onError=onError;
-    this.planning=planning;
     this.onToolsComplete=onToolsComplete;this.onNarration=onNarration;
-    this.allowAudio=allowAudio; this.onVoiceCommand=onVoiceCommand; this.onVoiceInput=onVoiceInput;
+    this.allowAudio=allowAudio; this.onVoiceInput=onVoiceInput;
     this.session=null; this.connected=false; this.recording=false;
     this.inputStream=null; this.inputContext=null; this.worklet=null; this.source=null;
     this.outputContext=null; this.nextPlayTime=0; this.scheduled=new Set();
@@ -88,7 +80,7 @@ export class LiveBridge {
     this.model=null;
     this.nextOutputSegment=false;
     this.narration=null;this.narrationTimer=null;this.narrationIdle=false;this.silenceOutput=false;
-    this.voiceText=''; this.voiceCommandTimer=null; this.hideReply=false;
+    this.toolQueue=Promise.resolve();this.cancelledTools=new Set();
   }
   async connect(model,level) {
     if(this.connected) return true;
@@ -102,7 +94,7 @@ export class LiveBridge {
     this.onState('connecting');
     const timeout=setTimeout(()=>controller.abort(new Error('O Gemini demorou para confirmar a sessão. Tente conectar novamente.')),15000);
     opening.promise=(async()=>{
-      if(!this.planning)this.initOutput();
+      this.initOutput();
       const res=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model}),signal:controller.signal});
       let payload={};
       try{payload=await res.json()}catch{}
@@ -115,8 +107,10 @@ export class LiveBridge {
       const extended=model===LIVE_EXTENDED;
       const config={
         responseModalities:[Modality.AUDIO],
-        systemInstruction:this.planning?guideInstructions+'\nPara toda fala, execute submit_plan antes de produzir qualquer áudio.':instructions+(extended?extendedGuideInstructions:nativeGuideInstructions),
-        ...(extended?{}:{tools:this.planning?planTools:tools}),
+        systemInstruction:instructions,
+        tools:extended?tools.map(({functionDeclarations})=>({
+          functionDeclarations:functionDeclarations.map(tool=>({...tool,behavior:'NON_BLOCKING'}))
+        })):tools,
         inputAudioTranscription:{},
         outputAudioTranscription:{},
         speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:'Aoede'}}}
@@ -198,21 +192,16 @@ export class LiveBridge {
     if(content?.interrupted) {
       this.stopPlayback();
       this.onTurnEnd?.();
-      clearTimeout(this.voiceCommandTimer);
-      this.voiceText='';
       this.onVoiceInput?.();
     }
     const input=content?.inputTranscription;
     if(input?.text) {
       this.silenceOutput=false;
-      this.hideReply=false;
       this.onText('Você',input.text,{stream:true});
-      if(this.model===LIVE_EXTENDED)this.voiceText+=input.text;
     }
-    if(input?.text || input?.finished || content?.turnComplete) this.scheduleVoiceCommand(session);
     const status=content?.interactionStatus ?? msg.interactionStatus;
     if(status==='IN_PROGRESS' && !this.recording) this.onState('busy');
-    if(!this.hideReply && content?.outputTranscription?.text){
+    if(content?.outputTranscription?.text){
       this.onText('Ponto',content.outputTranscription.text,{stream:true,newSegment:this.nextOutputSegment});
       this.nextOutputSegment=false;
     }
@@ -233,45 +222,47 @@ export class LiveBridge {
       this.narrationIdle=true;
       if(!this.scheduled.size)this.setNarration(null);
     }
-    if(this.model===LIVE_FAST && msg.toolCall?.functionCalls?.length) {
-      const functionResponses=[];
-      for(const {id,name,args} of msg.toolCall.functionCalls) {
-        if(session!==this.session) return;
-        try {
-          const result=await this.onTool(name,args||{});
-          functionResponses.push({id,name,response:{result}});
-        } catch(error){
-          functionResponses.push({id,name,response:{error:String(error.message||error)}});
-        }
-      }
-      if(session===this.session){
-        session.sendToolResponse({functionResponses});
-        this.onToolsComplete?.(functionResponses);
-      }
+    for(const id of msg.toolCallCancellation?.ids??[])this.cancelledTools.add(id);
+    const calls=msg.toolCall?.functionCalls;
+    if(calls?.length){
+      const work=this.toolQueue.then(()=>this.executeTools(session,calls));
+      this.toolQueue=work.catch(()=>{});
+      await work;
     }
   }
-  scheduleVoiceCommand(session) {
-    if(!this.voiceText.trim()) return;
-    clearTimeout(this.voiceCommandTimer);
-    this.voiceCommandTimer=setTimeout(()=>{
-      if(session!==this.session) return;
-      const text=this.voiceText.trim();
-      this.voiceText='';
-      this.onVoiceCommand?.(text);
-    },1800);
+  async executeTools(session,calls) {
+    const functionResponses=[];
+    for(const {id,name,args} of calls){
+      if(!session || session!==this.session)return;
+      if(this.cancelledTools.delete(id))continue;
+      try {
+        const result=await this.onTool(name,args||{});
+        functionResponses.push({id,name,response:{result}});
+      } catch(error){
+        functionResponses.push({id,name,response:{error:String(error.message||error)}});
+      }
+    }
+    if(session!==this.session)return;
+    const active=functionResponses.filter(({id})=>!this.cancelledTools.delete(id));
+    if(active.length){
+      this.onToolsComplete?.(active);
+      session.sendToolResponse({functionResponses:active});
+    }
   }
-  async startMicrophone() {
-    if(this.recording) return;
-    if(!this.connected||!this.session) throw new Error('A sessão não está conectada.');
+  requestMicrophone() {
     if(!navigator.mediaDevices?.getUserMedia) throw new Error('Este navegador não disponibiliza microfone.');
+    return navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false});
+  }
+  async startMicrophone(stream) {
+    if(this.recording)return false;
+    if(!this.connected||!this.session) throw new Error('A sessão não está conectada.');
     const session=this.session;
-    const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false});
     let ctx;
     try {
       ctx=new AudioContext();
       await ctx.resume();
       await ctx.audioWorklet.addModule(import.meta.env.BASE_URL+'pcm-worklet.js');
-      if(session!==this.session || !this.connected) {stream.getTracks().forEach(track=>track.stop());await ctx.close();return;}
+      if(session!==this.session || !this.connected) {stream.getTracks().forEach(track=>track.stop());await ctx.close();return false;}
       const source=ctx.createMediaStreamSource(stream);
       const node=new AudioWorkletNode(ctx,'ponto-pcm');
       const silent=ctx.createGain();silent.gain.value=0;
@@ -283,6 +274,7 @@ export class LiveBridge {
       source.connect(node);node.connect(silent);silent.connect(ctx.destination);
       this.inputStream=stream;this.inputContext=ctx;this.source=source;this.worklet=node;
       this.recording=true;this.onState('listening');
+      return true;
     } catch(e) {stream.getTracks().forEach(track=>track.stop()); if(ctx) await ctx.close();throw e;}
   }
   stopMicrophone() {
@@ -298,20 +290,16 @@ export class LiveBridge {
       this.onState('ready');
     }
   }
-  sendText(text,{display=true}={}) {
+  sendText(text) {
     if(!this.connected||!this.session) throw new Error('Conecte o assistente primeiro.');
-    clearTimeout(this.voiceCommandTimer);this.voiceText='';
     this.onTurnEnd?.();
-    if(display)this.onText('Você',text);
+    this.onText('Você',text);
     this.silenceOutput=false;
-    this.hideReply=false;
     this.session.sendRealtimeInput({text});
   }
-  muteReply() {
+  mutePlayback() {
     this.silenceOutput=true;
-    this.hideReply=true;
     this.stopPlayback();
-    this.onTurnEnd?.('Ponto');
   }
   setNarration(value) {
     clearTimeout(this.narrationTimer);
@@ -324,79 +312,25 @@ export class LiveBridge {
     this.stopPlayback();
     this.setNarration(null);
   }
-  narrate(text) {
+  expectNarration() {
     this.stopPlayback();
-    this.onTurnEnd?.();
     this.silenceOutput=false;
-    this.hideReply=false;
     this.narrationIdle=false;
     this.setNarration('pending');
     this.narrationTimer=setTimeout(()=>{
       this.cancelNarration();
       this.onNarration?.('failed');
     },15000);
-    this.session.sendRealtimeInput({text:'[Leitura de acessibilidade]\n'+text});
-  }
-  noteSiteAction(text) {
-    if(this.connected) this.session.sendClientContent({turns:[{role:'model',parts:[{text:'[Ponto Digital] '+text}]}],turnComplete:false});
   }
   disconnect() {
     this.sessionId++;
     this.onTurnEnd?.();
     this.opening?.controller.abort();this.opening=null;
-    clearTimeout(this.voiceCommandTimer);this.voiceText='';
     this.stopMicrophone();this.cancelNarration();this.stopPlayback();
     try{this.session?.close()}catch{}
-    this.session=null;this.connected=false;this.model=null;this.hideReply=false;this.silenceOutput=false;
+    this.session=null;this.connected=false;this.model=null;this.silenceOutput=false;
+    this.toolQueue=Promise.resolve();this.cancelledTools.clear();
     this.outputContext?.close().catch(()=>{});this.outputContext=null;
     this.onState('offline');
-  }
-}
-
-
-// This Live session only returns model decisions. The visitor's Live voice stays separate.
-export class LiveGuide {
-  constructor() {
-    this.pending=null;
-    this.bridge=new LiveBridge({
-      planning:true,
-      allowAudio:()=>false,
-      onState:state=>{if(state==='offline')this.pending?.finish(null);},
-      onText:()=>{},
-      onError:()=>this.pending?.finish(null),
-      onTool:(name,args)=>name==='submit_plan'?normalizeGuidePlan(args):null,
-      onToolsComplete:responses=>{
-        const response=responses.find(item=>item.name==='submit_plan');
-        if(response)this.pending?.finish(response.response.result);
-      }
-    });
-  }
-  async decide(input,signal) {
-    signal.throwIfAborted();
-    if(!await this.bridge.connect(LIVE_FAST,'low'))throw new Error('A sessão de decisão foi interrompida.');
-    signal.throwIfAborted();
-    return new Promise((resolve,reject)=>{
-      const finish=plan=>{
-        if(this.pending?.finish!==finish)return;
-        this.pending=null;
-        clearTimeout(timeout);
-        signal.removeEventListener('abort',cancel);
-        if(plan)resolve(plan);
-        else reject(new Error('O Gemini Live não devolveu uma decisão.'));
-      };
-      const cancel=()=>{
-        finish(null);
-        this.bridge.disconnect();
-      };
-      const timeout=setTimeout(cancel,8500);
-      this.pending={finish};
-      signal.addEventListener('abort',cancel,{once:true});
-      try {this.bridge.sendText(JSON.stringify(input),{display:false});}
-      catch {cancel();}
-    });
-  }
-  disconnect() {
-    this.pending?.finish(null);
-    this.bridge.disconnect();
   }
 }

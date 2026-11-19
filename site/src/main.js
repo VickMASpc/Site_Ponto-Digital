@@ -1,6 +1,6 @@
 import './styles.css';
 import { NAV, CONTENT, pageText } from './data.js';
-import { LIVE_EXTENDED, LIVE_FAST, LiveBridge, LiveGuide } from './live.js';
+import { LIVE_EXTENDED, LIVE_FAST, LiveBridge } from './live.js';
 
 const icons={
   mic:'<path d="M12 19v3m-5-3h10M9 9v4a3 3 0 0 0 6 0V9a3 3 0 0 0-6 0Zm-4 4a7 7 0 0 0 14 0"/>',
@@ -44,30 +44,26 @@ const state={
 let holdRequested=false, speaking=false, speechQueue=[],speechVersion=0;
 let agentNarration=null, speechStart=null;
 let readingVersion=0, narrationState=null;
-let guideRequest=null, guideThinking=false, readingEnded=null;
 const streamingActivity=new Map();
 let activityId=0;
 const $=(id)=>document.getElementById(id);
 const persist=(key,value)=>{try{localStorage.setItem('pd.'+key,JSON.stringify(value));}catch{}};
 function statusText(){
- if(guideThinking)return 'Gemini está decidindo como ajudar…';
  return {offline:'Assistente desconectado',connecting:'Conectando ao Gemini…',ready:'Conectado — pronto para conversar',listening:'Ouvindo você…',busy:'Processando sua solicitação…'}[state.status]||'';
 }
-const liveGuide=new LiveGuide();
 const bridge=new LiveBridge({
  onState(value){state.status=value;syncLive();},
  onError(message){notify(message);},
  onText:addActivity,
  onTurnEnd:finishActivity,
  onTool:executeTool,
- onToolsComplete:readAfterToolCalls,
+ onToolsComplete:showToolResults,
  onNarration(value){
    narrationState=value;
    syncReadingStatus();
    if(value==='failed')notify('O Gemini não iniciou a leitura em voz alta. O conteúdo está disponível na página.');
  },
- onVoiceCommand(text){handleGuideTurn(text,{voice:true}).catch(error=>notify(error.message));},
- onVoiceInput(){if(agentNarration)stopReading();},
+ onVoiceInput(){if(agentNarration || narrationState==='playing' || narrationState==='pending')stopReading();},
  allowAudio(source){
    // O microfone não deve enviar a voz do próprio narrador para o Gemini.
    if(source==='microphone')return !agentNarration && narrationState!=='playing';
@@ -100,7 +96,6 @@ function syncReadingStatus(){
  const label=$('tts-indicator');
  const text=readingStatus();
  if(label && label.textContent!==text)label.textContent=text;
- if(!text)readingEnded?.();
 }
 function stopReading(){
  ++readingVersion;
@@ -365,13 +360,21 @@ function navigate(id,{historyMode='push'}={}){
  return true;
 }
 const microphoneDenied='Microfone bloqueado pelo navegador. Você ainda pode conversar por texto.';
+let microphoneOpening=false;
 async function beginMicrophone(isHold=false){
  if(bridge.recording){if(!isHold)bridge.stopMicrophone();return;}
+ if(microphoneOpening)return;
+ microphoneOpening=true;
+ const {model,thinking}=state;
+ let stream;
  stopReading();
  try {
-   if(!await bridge.connect(state.model,state.thinking))return;
+   bridge.initOutput();
+   stream=await bridge.requestMicrophone();
+   if((isHold&&!holdRequested) || model!==state.model || thinking!==state.thinking)return;
+   if(!await bridge.connect(model,thinking))return;
    if(isHold&&!holdRequested){speak('Conexão pronta. Segure a tecla J novamente para falar.',{force:true});return;}
-   await bridge.startMicrophone();
+   if(await bridge.startMicrophone(stream))stream=null;
  } catch(e){
    if(e.name==='NotAllowedError' || e.name==='PermissionDeniedError'){
      state.activity=true;
@@ -381,6 +384,9 @@ async function beginMicrophone(isHold=false){
      return;
    }
    notify(e.message||'Não foi possível ativar o microfone.');
+ } finally {
+   stream?.getTracks().forEach(track=>track.stop());
+   microphoneOpening=false;
  }
 }
 function endMicrophone(){bridge.stopMicrophone();}
@@ -389,129 +395,27 @@ function resolvePage(text){
  const page=normalizeText(text).replace(/^#/,'');
  return NAV.find(({id,label})=>id===page||normalizeText(label)===page)?.id;
 }
-function cancelGuideRequest(){
- guideRequest?.abort();
- guideRequest=null;
- guideThinking=false;
- syncLive();
-}
-function waitForReading(signal){
- if(!readingStatus() || signal.aborted)return Promise.resolve();
- return new Promise(resolve=>{
-   const done=()=>{
-     signal.removeEventListener('abort',done);
-     if(readingEnded===done)readingEnded=null;
-     resolve();
-   };
-   readingEnded=done;
-   signal.addEventListener('abort',done,{once:true});
- });
-}
-async function handleGuideTurn(text,{voice=false}={}){
- cancelGuideRequest();
- const request=new AbortController();
- guideRequest=request;
- guideThinking=true;
- syncLive();
- const {signal}=request;
- const {model,thinking}=state;
- const transcript=voice&&state.transcript.at(-1)?.who==='Você'?state.transcript.slice(0,-1):state.transcript;
- const history=transcript.slice(-6)
-   .map(({who,text})=>({who,text:text.slice(0,360)}));
- if(!voice){
-   finishActivity();
-   addActivity('Você',text);
+function showToolResults(responses){
+ for(const {name,response} of responses){
+   const result=response.result;
+   if(name==='navigate_to' && result?.success){
+     const label=NAV.find(({id})=>id===result.page).label;
+     addActivity('Ponto','Página '+label+' aberta.');
+     if(result.silent)bridge.mutePlayback();
+   }
+   const reading=name==='navigate_to'?result?.narration:
+     (name==='read_page' || name==='read_section')?result:null;
+   if(!reading || reading.cancelled)continue;
+   if(reading.success)addActivity('Ponto','Lendo '+reading.title.replace(/[.!?]$/,'')+'.');
+   else if(reading.text && reading.page===state.page)bridge.expectNarration();
+   else if(reading.error)notify(reading.error);
  }
- try {
-   let plan;
-   try {plan=await liveGuide.decide({text:text.slice(0,1200),page:state.page,history},signal);}
-   catch(error){
-     if(signal.aborted)return;
-     notify(error.message||'O Gemini não conseguiu decidir a ação.');
-     plan={actions:[],respond:true};
-   }
-   if(signal.aborted)return;
-   guideThinking=false;
-   syncLive();
-   if(voice && plan.actions.length)bridge.muteReply();
-   for(const action of plan.actions){
-     if(signal.aborted)return;
-     if(action.name==='read_page' || action.name==='read_section'){
-       await readForGuide(action.section);
-       continue;
-     }
-     const result=await executeTool(action.name,action);
-     if(signal.aborted)return;
-     if(!result.success){notify(result.error);continue;}
-     if(action.name==='navigate_to'){
-       const label=NAV.find(({id})=>id===result.page).label;
-       addActivity('Ponto','Página '+label+' aberta.');
-       bridge.noteSiteAction('Página aberta: '+result.page+'.');
-     } else {
-       const summary={...result};
-       delete summary.success;
-       bridge.noteSiteAction('Ação realizada '+action.name+' '+JSON.stringify(summary));
-       if(action.name!=='stop_reading')addActivity('Ponto','Preferência atualizada.');
-     }
-   }
-   if(plan.respond && (!voice || plan.actions.length)){
-     await waitForReading(signal);
-     if(signal.aborted)return;
-     if(await bridge.connect(model,thinking) && !signal.aborted){
-       bridge.noteSiteAction('Página atual: '+state.page+'.');
-       bridge.sendText(text,{display:false});
-     }
-   }
- } finally {
-   if(guideRequest===request){
-     guideRequest=null;
-     guideThinking=false;
-     syncLive();
-   }
- }
-}
-async function readForGuide(section,prepared){
- stopReading();
- const request=readingVersion;
- const {model,thinking}=state;
- const result=prepared??await executeTool(section?'read_section':'read_page',{section});
- if(request!==readingVersion)return;
- if(result.success){
-   addActivity('Ponto','Lendo '+result.title.replace(/[.!?]$/,'')+'.');
-   return;
- }
- if(!result.text){notify(result.error);return;}
- narrationState='pending';
- syncReadingStatus();
- try {
-   const connected=await bridge.connect(model,thinking);
-   if(request!==readingVersion)return;
-   if(connected){bridge.narrate(result.text);return;}
- } catch(error){
-   if(request===readingVersion){
-     bridge.cancelNarration();
-     notify(result.error+' '+error.message);
-   }
- }
- if(request===readingVersion){narrationState=null;syncReadingStatus();}
-}
-function readAfterToolCalls(responses){
- const reading=responses.findLast(({name})=>name==='read_page' || name==='read_section');
- if(reading){
-   const result=reading.response.result;
-   if(result?.text && !result.success && result.page===state.page){
-     readForGuide(undefined,result);
-     return true;
-   }
-   return false;
- }
- return false;
 }
 async function readWithNarrator(text,details){
  const request=readingVersion;
  if(await speak(text,{agent:true}))return {success:true,...details};
  if(request!==readingVersion)return {success:false,cancelled:true,...details};
- return {success:false,...details,error:state.tts?'O navegador não iniciou a leitura em voz alta.':'O narrador local está desativado.',text};
+ return {success:false,...details,error:'Narrador local indisponível.',text};
 }
 async function executeTool(name,args){
  const current=CONTENT[state.page];
@@ -519,9 +423,12 @@ async function executeTool(name,args){
   case 'navigate_to': {
     const id=resolvePage(args.page);
     if(!id)return {success:false,error:'Página inexistente',available:NAV.map(x=>x.id)};
-    const changed=id!==state.page;
-    if(changed)navigate(id);
-    return {success:true,page:id,title:CONTENT[id].title,description:CONTENT[id].description};
+    if(id!==state.page)navigate(id);
+    const result={success:true,page:id,title:CONTENT[id].title,description:CONTENT[id].description};
+    if(args.silent===true)return {...result,silent:true};
+    if(args.readAloud!==true)return result;
+    const narration=await executeTool(args.section?'read_section':'read_page',{section:args.section});
+    return {...result,narration};
   }
   case 'stop_reading':stopReading();return {success:true};
   case 'get_navigation_options':return NAV.map(x=>({page:x.id,label:x.label}));
@@ -534,7 +441,7 @@ async function executeTool(name,args){
   case 'read_section':
   case 'summarize_section':{
     const query=normalizeText(args.section);
-    const match=current.sections.find(x=>normalizeText(x.title).includes(query));
+    const match=query&&current.sections.find(x=>normalizeText(x.title).includes(query));
     if(!match)return {error:'Seção não encontrada',available:current.sections.map(x=>x.title)};
     if(name==='read_section')return readWithNarrator(match.title+'. '+match.body,{page:state.page,title:match.title});
     return {page:state.page,title:match.title,text:match.body,instruction:'Resuma de forma clara para o visitante.'};
@@ -581,7 +488,7 @@ function setSetting(key,value){
  const focusedId=document.activeElement?.id;
  if(['font','rate'].includes(key))value=Number(value);
  if(key==='tts')value=Boolean(value);
- if((key==='model' || key==='thinking')&&state[key]!==value){cancelGuideRequest();liveGuide.disconnect();stopReading();bridge.disconnect();}
+ if((key==='model' || key==='thinking')&&state[key]!==value){stopReading();bridge.disconnect();}
  if(key==='tts'&&!value)stopSpeech();
  state[key]=value;persist(key,value);render();
  if(focusedId)document.getElementById(focusedId)?.focus();
@@ -598,7 +505,7 @@ function setSetting(key,value){
 const app=$('app');
 app.addEventListener('click',event=>{
  const nav=event.target.closest('[data-nav]');
- if(nav){event.preventDefault();cancelGuideRequest();navigate(nav.dataset.nav);bridge.noteSiteAction('Página atual: '+state.page+'.');return;}
+ if(nav){event.preventDefault();navigate(nav.dataset.nav);return;}
  const read=event.target.closest('[data-read-section]');
  if(read){const section=CONTENT[state.page].sections[Number(read.dataset.readSection)];if(section)speak(section.title+'. '+section.body,{force:true});return;}
  const prompt=event.target.closest('[data-prompt]');
@@ -613,9 +520,9 @@ app.addEventListener('click',event=>{
   case 'read-page':speak(pageText(state.page),{force:true});break;
   case 'mic':if(ignoreMicClick){ignoreMicClick=false;break;} beginMicrophone();break;
   case 'activity':state.activity=!state.activity;render();break;
-  case 'disconnect':cancelGuideRequest();liveGuide.disconnect();stopReading();bridge.disconnect();notify('Sessão encerrada.');break;
+  case 'disconnect':stopReading();bridge.disconnect();notify('Sessão encerrada.');break;
   case 'clear-demo':state.demo=[];render();announce('Simulação limpa.');break;
-  case 'stop-speech':cancelGuideRequest();stopReading();break;
+  case 'stop-speech':stopReading();break;
  }
 });
 app.addEventListener('pointerdown',event=>{
@@ -635,11 +542,6 @@ async function sendChatMessage(text){
  if(state.notice===microphoneDenied)notify('');
  bridge.initOutput();
  stopReading();
- if(state.model===LIVE_EXTENDED){
-   await handleGuideTurn(text);
-   return;
- }
- cancelGuideRequest();
  if(await bridge.connect(state.model,state.thinking))bridge.sendText(text);
 }
 app.addEventListener('submit',event=>{
@@ -657,7 +559,7 @@ app.addEventListener('submit',event=>{
 });
 window.addEventListener('keydown',event=>{
  if(event.key==='Escape'){
-   if(guideRequest || speaking || narrationState==='pending' || narrationState==='playing'){cancelGuideRequest();stopReading();}
+   if(speaking || narrationState==='pending' || narrationState==='playing')stopReading();
    else if(state.help||state.settings){closeDialog();}
    else if(state.menu||state.activity){state.menu=state.activity=false;render();}
    return;
@@ -685,9 +587,9 @@ window.addEventListener('keydown',event=>{
 window.addEventListener('keyup',event=>{
  if(event.key.toLowerCase()==='j'&&state.micMode==='hold'&&holdRequested){holdRequested=false;endMicrophone();}
 });
-function syncUrl(){const page=location.hash.slice(1)||'inicio';if(Object.hasOwn(CONTENT,page)&&page!==state.page){cancelGuideRequest();navigate(page,{historyMode:'none'});}}
+function syncUrl(){const page=location.hash.slice(1)||'inicio';if(Object.hasOwn(CONTENT,page)&&page!==state.page)navigate(page,{historyMode:'none'});}
 window.addEventListener('hashchange',syncUrl);
 window.addEventListener('popstate',syncUrl);
-window.addEventListener('pagehide',()=>{cancelGuideRequest();liveGuide.disconnect();stopReading();bridge.disconnect();});
+window.addEventListener('pagehide',()=>{stopReading();bridge.disconnect();});
 render();
 setTimeout(()=>{if(state.tts&&!speaking&&!bridge.opening&&!bridge.connected)speak(introText());},600);

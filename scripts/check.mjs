@@ -1,6 +1,6 @@
 import { readFileSync, existsSync } from 'node:fs';
 import assert from 'node:assert/strict';
-import { NAV,CONTENT,pageText } from '../site/src/data.js';
+import { NAV,CONTENT,companyKnowledge,pageText } from '../site/src/data.js';
 import { execFileSync } from 'node:child_process';
 for (const path of ['main.js','data.js','live.js','styles.css']) assert(existsSync('site/src/'+path), 'Missing '+path);
 for (const path of ['site/src/main.js','site/src/data.js','site/src/live.js','worker/worker.js']) {
@@ -21,7 +21,7 @@ assert(main.includes('access-start') && main.includes('Ouvir instruções de nav
 assert(main.includes('access-talk') && main.includes('Ler a página atual'),'Voice and local reading must be discoverable');
 assert(main.includes("previousDialogFocus") && main.includes("aria-modal"),'Dialog accessible focus control missing');
 assert(main.includes("history.pushState") && main.includes("syncUrl"),'Page navigation history must work');
-assert(main.includes("state.shortcut==='off'") && main.includes("event.altKey&&event.key.toLowerCase()==='j'"),'Shortcut disable / modifier required');
+assert(main.includes("!event.altKey && state.shortcut==='off'"),'Shortcut disable / modifier required');
 assert(main.includes('TECNOLOGIA PARA EMPRESAS') && main.includes('Conheça nossas soluções'),'Home must lead with B2B');
 assert(styles.includes('--teal:#155bd4') && styles.includes('.business-art'), 'Blue company identity missing');
 assert(html.includes('lang="pt-BR"') && html.includes('href="#main"'), 'Language and skip link required');
@@ -50,21 +50,31 @@ try {
   assert(!JSON.stringify(diagnosis).includes('synthetic-test-key'),'Never expose server key');
   assert.deepEqual(observedPayload,{uses:1},'Token issuance must use the minimal documented payload');
 } finally {globalThis.fetch=oldFetch;}
-const {LiveBridge,LIVE_EXTENDED}=await import('../site/src/live.js');
-const responses=[];
+const {LiveBridge,LIVE_MODEL,liveConfig}=await import('../site/src/live.js');
+assert.equal(LIVE_MODEL,'gemini-3.8-live');
+const config=liveConfig();
+assert.deepEqual(config.responseModalities,['AUDIO']);
+assert(!('tools' in config) && !('thinkingConfig' in config),'Base conversation has no tools or extended settings');
+assert(config.systemInstruction.includes(companyKnowledge()));
+for(const {id,label} of NAV)assert(config.systemInstruction.includes(label+'\n'+pageText(id)),'Knowledge must include '+label);
+const extendedRequest=new Request('https://example.workers.dev/token',{
+  method:'POST',headers:{Origin:'https://example.workers.dev','Content-Type':'application/json'},
+  body:JSON.stringify({model:'gemini-3.8-live-extended-thinking'})
+});
+globalThis.fetch=()=>assert.fail('Non-base requests must not contact Gemini');
+try {assert.equal((await worker.fetch(extendedRequest,testEnv)).status,400);}
+finally {globalThis.fetch=oldFetch;}
+const received=[];
 const bridge=new LiveBridge({
   onState:()=>{},
-  onTool:async(name,args)=>({name,args}),
-  onError:error=>{throw new Error(error);}
+  onText:(who,text)=>received.push([who,text]),
+  onTextOnly:text=>received.push(['fallback',text]),
+  onError:assert.fail
 });
-bridge.model=LIVE_EXTENDED;
-bridge.session={sendToolResponse:response=>responses.push(response)};
-await bridge.processMessage({serverContent:{turnComplete:true,interactionStatus:'IN_PROGRESS'}});
-await bridge.processMessage({toolCall:{functionCalls:[{
-  id:'extended-tool-test',name:'navigate_to',args:{page:'solucoes',readAloud:true}
-}]}});
-assert.deepEqual(responses,[{functionResponses:[{
-  id:'extended-tool-test',name:'navigate_to',
-  response:{result:{name:'navigate_to',args:{page:'solucoes',readAloud:true}}}
-}]}],'Extended executes late native calls on the active session and preserves the call ID');
-console.log('Syntax, accessibility, Worker config, session tokens, native Extended tools and origin tests passed.');
+bridge.processMessage({toolCall:{functionCalls:[{id:'removed',name:'navigate_to',args:{page:'solucoes'}}]}});
+bridge.processMessage({serverContent:{outputTranscription:{text:'Desenvolvemos software'}}});
+bridge.processMessage({serverContent:{outputTranscription:{text:' para empresas.'},turnComplete:true}});
+assert.deepEqual(received,[
+  ['Ponto','Desenvolvemos software'],['Ponto',' para empresas.'],['fallback','Desenvolvemos software para empresas.']
+]);
+console.log('Syntax, accessibility, base Live configuration, company knowledge, transcription and Worker checks passed.');

@@ -5,7 +5,7 @@
  * RATE_LIMIT é um binding Cloudflare Rate Limiting, obrigatório (fail closed).
  * Restrinja publicamente também por WAF/Turnstile e por cotas do projeto Google.
  */
-const MODELS = new Set(['gemini-3.8-live', 'gemini-3.8-live-extended-thinking', 'gemini-3.1-flash-live-preview']);
+const LIVE_MODEL = 'gemini-3.8-live';
 
 /**
  * Surface the *actual* validation reason safely. The previous 400 handler
@@ -49,7 +49,7 @@ export default {
     if (!permitted.success) return json({error:'Limite de sessões atingido. Tente novamente mais tarde.'},429,origin);
     let body;
     try { body = await request.json(); } catch { return json({error:'JSON inválido'},400,origin); }
-    if (!MODELS.has(body.model)) return json({error:'Modelo indisponível'},400,origin);
+    if (body?.model !== LIVE_MODEL) return json({error:'Modelo indisponível'},400,origin);
     // Minimal body from Google's REST documentation for auth_tokens.create.
     // Token defaults: 1 use, 1 minute to start, 30 minutes of lifetime.
     // Previously we included liveConnectConstraints; the token server returned 400.

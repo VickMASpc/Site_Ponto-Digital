@@ -1,6 +1,6 @@
 import './styles.css';
 import { NAV, CONTENT, pageText } from './data.js';
-import { LIVE_EXTENDED, LIVE_FAST, LIVE_FLASH, LiveBridge } from './live.js';
+import { LiveBridge } from './live.js';
 
 const icons={
   mic:'<path d="M12 19v3m-5-3h10M9 9v4a3 3 0 0 0 6 0V9a3 3 0 0 0-6 0Zm-4 4a7 7 0 0 0 14 0"/>',
@@ -30,90 +30,55 @@ const icons={
 const ico=(name,size=20)=>`<svg class="ico" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]||icons.sparkle}</svg>`;
 const esc=(s)=>String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const mobile=matchMedia('(pointer: coarse)').matches;
-let previousDialogFocus=null;
-let ignoreMicClick=false;
 const load=(key,fallback)=>{try{const x=localStorage.getItem('pd.'+key);return x==null?fallback:JSON.parse(x);}catch{return fallback;}};
-const savedModel=load('model',LIVE_FLASH);
 const state={
  page: Object.hasOwn(CONTENT,location.hash.slice(1))?location.hash.slice(1):'inicio',
- theme:load('theme','light'),font:load('font',1),micMode:load('micMode',mobile?'toggle':'hold'),
- tts:load('tts',true),rate:load('rate',1),shortcut:load('shortcut','j'),model:[LIVE_FAST,LIVE_EXTENDED,LIVE_FLASH].includes(savedModel)?savedModel:LIVE_FLASH,
- thinking:load('thinking','medium'),settings:false,help:false,menu:false,activity:false,
- status:'offline',transcript:[],demo:[],notice:'',retry:null,sessionModel:null,intro:true
+ theme:load('theme','light'),font:load('font',1),tts:load('tts',true),rate:load('rate',1),
+ shortcut:load('shortcut','j'),menu:false,activity:false,status:'offline',
+ transcript:[],demo:[],notice:'',draft:''
 };
-let holdRequested=false, speaking=false, speechQueue=[],speechVersion=0;
-let agentNarration=null, speechStart=null;
-let readingVersion=0, narrationState=null;
+let microphoneOpening, chatTrigger, previousDialogFocus;
+let speaking=false, speechQueue=[], speechVersion=0, speechStart=null;
 const streamingActivity=new Map();
 let activityId=0;
 const $=(id)=>document.getElementById(id);
 const persist=(key,value)=>{try{localStorage.setItem('pd.'+key,JSON.stringify(value));}catch{}};
-function currentModel(){return state.sessionModel??state.model;}
 function statusText(){
- if(state.status==='ready' && bridge.model===LIVE_FLASH)return 'Gemini 3.1 Flash Live conectado';
- return {stalled:'O Gemini parou de responder',offline:'Assistente desconectado',connecting:'Conectando ao Gemini…',ready:'Conectado — pronto para conversar',listening:'Ouvindo você…',busy:'Processando sua solicitação…'}[state.status]||'';
+ if(bridge.recording)return 'Microfone ligado. Fale agora.';
+ if(microphoneOpening)return microphoneOpening.stage;
+ return {
+   offline:'Assistente desconectado',connecting:'Conectando ao Gemini…',
+   ready:'Microfone desligado. Pronto para conversar.',
+   waiting:'Microfone desligado. Aguardando a resposta…',
+   busy:'Aguardando a resposta do assistente…'
+ }[state.status]||'';
 }
 const bridge=new LiveBridge({
  onState(value){state.status=value;syncLive();},
- onError(message){notify(message);},
+ onError:notify,
  onText:addActivity,
  onTurnEnd:finishActivity,
- onTool:executeTool,
- onStalled:handleStalledTurn,
- onTextOnly(text){speak(text,{agent:true});},
- onToolsComplete:showToolResults,
- onNarration(value){
-   narrationState=value;
-   syncReadingStatus();
-   if(value==='failed')notify('O Gemini não iniciou a leitura em voz alta. O conteúdo está disponível na página.');
+ onStalled({reason,retryText}){
+   if(retryText && !state.draft){
+     state.draft=retryText;
+     $('chat-text').value=retryText;
+   }
+   notify(reason);
  },
- onVoiceInput(){if(agentNarration || narrationState==='playing' || narrationState==='pending')stopReading();},
- allowAudio(source){
-   // O microfone não deve enviar a voz do próprio narrador para o Gemini.
-   if(source==='microphone')return !agentNarration && narrationState!=='playing';
-   if(agentNarration)return false;
-   if(speaking)stopSpeech();
-   return true;
- }
+ onTextOnly(text){speak(text).then(started=>{if(!started && !bridge.silenceOutput)announce('Ponto. '+text);});},
+ onAudio(){if(speaking)stopSpeech();}
 });
-function retryLabel(){
- return state.retry?.text?'Tentar novamente com Gemini 3.1 Flash Live':'Usar Gemini 3.1 Flash Live';
-}
 function notify(text){
  state.notice=text;
  const box=$('notice');
- if(box){
-   $('notice-text').textContent=text;
-   box.hidden=!text;
-   const retry=$('retry-live');
-   retry.hidden=!state.retry;
-   retry.textContent=retryLabel();
- }
- if(text)console.info('[Ponto Digital]',text);
-}
-function handleStalledTurn({model,retryText,reason}){
- state.retry=model===LIVE_FLASH?null:{text:retryText};
- state.status='stalled';
- syncLive();
- const input=$('chat-text');
- if(input && retryText && !input.value)input.value=retryText;
- notify(reason+' '+(state.retry?'Você pode usar o Gemini 3.1 Flash Live.':'Envie uma nova mensagem para reconectar.'));
-}
-async function retryWithFlash(){
- const retry=state.retry;
- if(!retry)return;
- state.retry=null;
- if(bridge.connected || bridge.opening)bridge.disconnect();
- state.sessionModel=LIVE_FLASH;
- notify('Gemini 3.1 Flash Live selecionado para esta conversa.');
- if(!retry.text)return;
- const input=$('chat-text');
- if(input?.value===retry.text)input.value='';
- try {
-   if(await bridge.connect(LIVE_FLASH,'low'))bridge.sendText(retry.text,{display:false});
- } catch(error){
-   if(input && !input.value)input.value=retry.text;
-   notify(error.message||'Não foi possível conectar ao Gemini 3.1 Flash Live.');
+ if(!box)return;
+ const notice=$('notice-text');
+ if(text){
+   box.hidden=false;
+   notice.textContent=text;
+ } else {
+   notice.textContent='';
+   box.hidden=true;
  }
 }
 function applyPrefs() {
@@ -121,40 +86,37 @@ function applyPrefs() {
  document.documentElement.style.setProperty('--font-scale',String(state.font));
 }
 function introText() {
- return mobile
- ? 'Bem-vindo à Ponto Digital, empresa de desenvolvimento de software para negócios. Você pode navegar com gestos do leitor de tela e ativar botões com toque duplo. A primeira opção da página é ouvir este guia. O botão de microfone se chama Ativar microfone e permite conversar quando a conexão estiver disponível. Um toque liga e outro desliga. Todas as páginas também podem ser lidas sem Gemini.'
- : 'Bem-vindo à Ponto Digital, empresa de desenvolvimento de software para negócios. Para navegar, use Tab até os links e Enter para abrir. O primeiro botão da página permite ouvir estas orientações novamente. A tecla J, marcada por uma saliência tátil, ativa a conversa por voz; Alt mais J é uma alternativa. Use o botão de microfone se seu leitor de tela interceptar J. Também é possível ler páginas sem Gemini e ajustar contraste e texto nas preferências.';
+ const common='Explore as páginas pelo menu. O botão Ler a página atual usa a voz do navegador. Abra a conversa por texto para perguntar sobre a Ponto Digital sem usar o microfone.';
+ const mic='Ative o botão Microfone do assistente. Aguarde o aviso de microfone ligado, fale e ative de novo para desligar. Use Parar áudio para interromper a fala.';
+ if(mobile)return 'Com TalkBack ou VoiceOver, deslize para percorrer os elementos e dê dois toques para ativar um botão. '+mic+' '+common;
+ const key=state.shortcut==='j'?'J ou Alt mais J liga e desliga o microfone. ':'Alt mais J liga e desliga o microfone. ';
+ return 'Use Tab para percorrer os controles e Enter para ativá-los. '+key+'Se seu leitor de tela usar esse atalho, use o botão de microfone. '+mic+' '+common;
 }
 function readingStatus(){
- if((speaking && !speechStart) || narrationState==='playing')return 'Leitura em andamento';
- if(speaking || narrationState==='pending')return 'Preparando leitura em voz alta';
- return '';
+ return speaking?(speechStart?'Preparando leitura em voz alta':'Leitura em andamento'):'';
 }
 function syncReadingStatus(){
  const label=$('tts-indicator');
- const text=readingStatus();
- if(label && label.textContent!==text)label.textContent=text;
+ if(label && label.textContent!==readingStatus())label.textContent=readingStatus();
 }
-function stopReading(){
- ++readingVersion;
- narrationState=null;
+function stopAudio(){
  stopSpeech();
- bridge.cancelNarration();
+ bridge.mutePlayback();
 }
 function stopSpeech(){
- ++speechVersion;speaking=false;speechQueue=[];
+ ++speechVersion;
+ speaking=false;
+ speechQueue=[];
  speechStart?.(false);
- agentNarration=null;
  if('speechSynthesis' in window) speechSynthesis.cancel();
  syncReadingStatus();
 }
-function speak(text,{force=false,agent=false}={}){
+function speak(text,{force=false}={}){
  if(!('speechSynthesis' in window) || !window.SpeechSynthesisUtterance){
-   if(!agent)notify('A leitura por voz não está disponível neste navegador.');
+   if(force)notify('A voz do navegador está indisponível. Você pode ler o conteúdo com seu leitor de tela.');
    return Promise.resolve(false);
  }
  if(!state.tts&&!force)return Promise.resolve(false);
- if(agent && agentNarration?.text===text)return agentNarration.started;
  const chunks=String(text).trim().match(/[^.!?]+[.!?]+|[^.!?]+$/g)?.flatMap(piece=>{
    const words=piece.trim().split(/\s+/);
    const parts=[];
@@ -162,27 +124,36 @@ function speak(text,{force=false,agent=false}={}){
    return parts;
  })||[];
  if(!chunks.length)return Promise.resolve(false);
- stopSpeech();
- bridge.stopPlayback();
- speechQueue=chunks;const v=speechVersion;speaking=true;
+ if(force){
+   if(bridge.recording)bridge.stopMicrophone();
+   stopAudio();
+ }else stopSpeech();
+ speechQueue=chunks;
+ const version=speechVersion;
+ speaking=true;
  const voices=speechSynthesis.getVoices();
  const voice=voices.find(x=>x.lang.toLowerCase()==='pt-br')||voices.find(x=>x.lang.startsWith('pt'));
- const deadline=agent?setTimeout(()=>{if(v===speechVersion)stopSpeech();},2500):null;
+ const deadline=setTimeout(()=>{if(version===speechVersion)fail();},2500);
  const started=new Promise(resolve=>{
    speechStart=ok=>{clearTimeout(deadline);speechStart=null;resolve(ok);syncReadingStatus();};
  });
  syncReadingStatus();
- if(agent)agentNarration={text,started};
+ function fail(){
+   stopSpeech();
+   if(force)notify('A voz do navegador não iniciou. Você pode ler o conteúdo com seu leitor de tela.');
+ }
  function next(){
-   if(v!==speechVersion)return;
+   if(version!==speechVersion)return;
    const chunk=speechQueue.shift();
    if(!chunk){stopSpeech();return;}
-   const u=new SpeechSynthesisUtterance(chunk);
-   u.lang='pt-BR';u.rate=state.rate;if(voice)u.voice=voice;
-   u.onstart=()=>{if(v===speechVersion)speechStart?.(true);};
-   u.onend=next;
-   u.onerror=()=>{if(v===speechVersion)stopSpeech();};
-   try{speechSynthesis.speak(u);}catch{if(v===speechVersion)stopSpeech();}
+   const utterance=new SpeechSynthesisUtterance(chunk);
+   utterance.lang='pt-BR';
+   utterance.rate=state.rate;
+   if(voice)utterance.voice=voice;
+   utterance.onstart=()=>{if(version===speechVersion)speechStart?.(true);};
+   utterance.onend=next;
+   utterance.onerror=()=>{if(version===speechVersion)fail();};
+   try{speechSynthesis.speak(utterance);}catch{if(version===speechVersion)fail();}
  }
  next();
  return started;
@@ -204,7 +175,6 @@ function addActivity(who,text,{stream=false,newSegment=false}={}) {
    state.transcript.push(entry);
    if(stream)streamingActivity.set(who,entry);
    if(list){
-     if(stream)list.setAttribute('aria-busy','true');
      list.querySelector('.empty-activity')?.remove();
      list.insertAdjacentHTML('beforeend',activityMessage(entry));
    }
@@ -219,7 +189,6 @@ function addActivity(who,text,{stream=false,newSegment=false}={}) {
 function finishActivity(who){
  if(who)streamingActivity.delete(who);
  else streamingActivity.clear();
- $('activity-list')?.setAttribute('aria-busy',String(streamingActivity.size>0));
 }
 function activityMessage(entry){
  const role=entry.who==='Você'?'user-message':'agent-message';
@@ -231,25 +200,32 @@ function activityMarkup(){
  : '<p class="empty-activity">Sua conversa aparecerá aqui, com transcrições quando o Gemini fornecê-las.</p>';
 }
 function syncLive() {
- const label=$('voice-status');if(label)label.textContent=statusText();
- const dot=$('voice-dot');if(dot)dot.dataset.status=state.status;
- const btn=$('mic-button');if(btn){
-   btn.setAttribute('aria-pressed',bridge.recording?'true':'false');
-   btn.setAttribute('aria-label',bridge.recording?'Parar de falar':'Ativar microfone');
-   btn.dataset.active=bridge.recording?'true':'false';
+ const status=statusText();
+ const label=$('voice-status');
+ if(label && label.textContent!==status)label.textContent=status;
+ const chatStatus=$('chat-voice-status');
+ if(chatStatus)chatStatus.textContent=status;
+ const dot=$('voice-dot');
+ if(dot)dot.dataset.status=bridge.recording?'listening':state.status;
+ const keys=state.shortcut==='j'?'J Alt+J':'Alt+J';
+ for(const button of document.querySelectorAll('button[data-action="mic"]')){
+   button.setAttribute('aria-pressed',String(bridge.recording));
+   button.dataset.active=String(bridge.recording);
+   if(!mobile)button.setAttribute('aria-keyshortcuts',keys);
  }
- const desc=$('mic-hint');if(desc)desc.textContent=bridge.recording?'Microfone ativo. Fale agora.':(mobile?'Toque para conversar':state.micMode==='hold'?'Segure J para falar':'Pressione J para ligar ou desligar');
- const talk=document.querySelector('.access-talk');
- if(talk){talk.setAttribute('aria-pressed',bridge.recording?'true':'false');talk.textContent=bridge.recording?'Parar microfone':'Conversar por voz (opcional)';}
- const disconnect=$('disconnect');if(disconnect)disconnect.hidden=!bridge.connected;
+ const hint=$('mic-hint');
+ if(hint)hint.textContent=mobile?'Um toque liga ou desliga':state.shortcut==='j'?'J liga ou desliga':'Alt + J liga ou desliga';
+ const disconnect=$('disconnect');
+ if(disconnect)disconnect.hidden=!bridge.connected && !bridge.opening;
 }
+
 function navItems(){
  return NAV.map(x=>`<a href="#${x.id}" data-nav="${x.id}" class="nav-link ${state.page===x.id?'selected':''}" ${state.page===x.id?'aria-current="page"':''}>${x.label}</a>`).join('');
 }
 function sectionHTML(items) {
  return items.map((item,i)=>`<article class="info-card ${i===0?'large-card':''}">
-  <div class="card-index">${String(i+1).padStart(2,'0')}</div><h2>${esc(item.title)}</h2><p>${esc(item.body)}</p>
-  <button class="text-action" data-read-section="${i}">${ico('sound',17)} Ouvir esta seção</button>
+  <div class="card-index" aria-hidden="true">${String(i+1).padStart(2,'0')}</div><h2>${esc(item.title)}</h2><p>${esc(item.body)}</p>
+  <button class="text-action" data-read-section="${i}" aria-label="Ouvir esta seção: ${esc(item.title)}">${ico('sound',17)} Ouvir esta seção</button>
  </article>`).join('');
 }
 function pageMarkup() {
@@ -260,7 +236,7 @@ function pageMarkup() {
       <div class="hero-copy">
         <div class="eyebrow"><span class="signal-mark" aria-hidden="true"></span> TECNOLOGIA PARA EMPRESAS <span class="eyebrow-line" aria-hidden="true"></span> PONTO DIGITAL</div>
         <h1 id="main-heading" tabindex="-1">Sua empresa mais <em>digital.</em> Seu trabalho mais simples.</h1>
-        <p class="hero-lead">Criamos soluções em software para ajudar empresas a organizar processos, reduzir tarefas repetitivas e trabalhar melhor.</p>
+        <p class="hero-lead">${esc(p.description)}</p>
         <div class="hero-actions">
           <button data-nav="solucoes" class="btn btn-primary">Conheça nossas soluções ${ico('arrow',19)}</button>
           <button data-nav="empresa" class="btn btn-secondary">Sobre a Ponto Digital</button>
@@ -313,7 +289,7 @@ function pageMarkup() {
   </section>
   <section class="content-layout"><div class="content-title"><span class="section-kicker">CONTEÚDO / ${String(p.sections.length).padStart(2,'0')} PARTES</span><h2>Explore no seu ritmo.</h2><p>Leia, ouça ou peça um resumo ao assistente.</p></div><div class="info-grid">${sectionHTML(p.sections)}</div></section>
   ${state.page==='laboratorio'?labMarkup():''}
-  <section class="next-section"><span>CONTINUE EXPLORANDO</span><h2>O próximo passo pode ser uma conversa.</h2><button class="btn btn-outline" data-action="help">Como usar a navegação por voz ${ico('arrow',19)}</button></section>
+  <section class="next-section"><span>CONTINUE EXPLORANDO</span><h2>O próximo passo pode ser uma conversa.</h2><button class="btn btn-outline" data-action="help">Como usar os recursos de acessibilidade ${ico('arrow',19)}</button></section>
  `;
 }
 function labMarkup(){
@@ -325,7 +301,7 @@ function labMarkup(){
  <label for="demo-value">Valor em reais</label><input id="demo-value" name="amount" inputmode="decimal" type="number" min="0.01" step="0.01" placeholder="0,00" required>
  <label for="demo-type">Tipo</label><select id="demo-type" name="type"><option value="income">Receita</option><option value="expense">Despesa</option></select>
  <button class="btn btn-primary" type="submit">${ico('plus',18)} Adicionar lançamento</button></form>
- <div class="balance-card"><span>SALDO DA SIMULAÇÃO</span><strong>${money(balance)}</strong><p>${state.demo.length} lançamento(s) nesta sessão</p>
+ <div class="balance-card"><span>SALDO DA SIMULAÇÃO</span><strong id="demo-balance">${money(balance)}</strong><p>${state.demo.length} lançamento(s) nesta sessão</p>
  <div class="transactions">${state.demo.length?state.demo.slice().reverse().map(x=>`<div><span>${esc(x.description)}</span><b class="${x.type==='income'?'positive':'negative'}">${x.type==='income'?'+':'−'} ${money(x.value)}</b></div>`).join(''):'<p>Ainda não há lançamentos.</p>'}</div>
  <button class="quiet-button" data-action="clear-demo">Limpar simulação</button></div></div></section>`;
 }
@@ -334,12 +310,10 @@ function settingsMarkup() {
   <div class="panel-head"><div><span class="section-kicker">PREFERÊNCIAS</span><h2>Seu jeito de navegar.</h2></div><button class="icon-button" data-action="close-overlay" aria-label="Fechar configurações">${ico('x')}</button></div>
   <div class="setting-group"><h3>Visual</h3><label for="theme-select">Tema do site</label><select id="theme-select" data-setting="theme"><option value="light" ${state.theme==='light'?'selected':''}>Claro</option><option value="dark" ${state.theme==='dark'?'selected':''}>Escuro</option><option value="contrast" ${state.theme==='contrast'?'selected':''}>Alto contraste</option></select>
   <label for="font-select">Tamanho do texto</label><select id="font-select" data-setting="font"><option value="1" ${state.font==1?'selected':''}>Padrão (100%)</option><option value="1.18" ${state.font==1.18?'selected':''}>Grande (118%)</option><option value="1.36" ${state.font==1.36?'selected':''}>Muito grande (136%)</option><option value="1.55" ${state.font==1.55?'selected':''}>Máximo (155%)</option></select></div>
-  <div class="setting-group"><h3>Microfone</h3><label for="mic-select">Como ativar</label><select id="mic-select" data-setting="micMode"><option value="toggle" ${state.micMode==='toggle'?'selected':''}>Alternar: um toque liga, outro desliga</option><option value="hold" ${state.micMode==='hold'?'selected':''}>Segurar para falar</option></select><p class="setting-note">J possui uma saliência tátil no teclado. Alt + J funciona como alternativa para tecnologias assistivas. Todos os controles também funcionam com Tab e Enter.</p>
-  <label for="shortcut-select">Atalho de uma letra</label><select id="shortcut-select" data-setting="shortcut"><option value="j" ${state.shortcut==='j'?'selected':''}>J habilitado</option><option value="off" ${state.shortcut==='off'?'selected':''}>Desativar J isolado (manter Alt + J)</option></select></div>
-  <div class="setting-group"><h3>Assistente Gemini</h3><label for="model-select">Modelo de voz</label><select id="model-select" data-setting="model"><option value="${LIVE_FAST}" ${state.model===LIVE_FAST?'selected':''}>Gemini 3.8 Live · rápido</option><option value="${LIVE_EXTENDED}" ${state.model===LIVE_EXTENDED?'selected':''}>Gemini 3.8 Live · Extended Thinking</option><option value="${LIVE_FLASH}" ${state.model===LIVE_FLASH?'selected':''}>Gemini 3.1 Flash Live Preview (padrão)</option></select>
-  ${state.model===LIVE_EXTENDED? `<label for="think-select">Raciocínio avançado</label><select id="think-select" data-setting="thinking"><option value="low" ${state.thinking==='low'?'selected':''}>Baixo</option><option value="medium" ${state.thinking==='medium'?'selected':''}>Médio</option><option value="high" ${state.thinking==='high'?'selected':''}>Alto</option></select>`:''}
-  <p class="setting-note">Alterar o modelo ou o nível de raciocínio encerra a sessão atual. Use o microfone ou envie uma mensagem para conectar novamente.</p></div>
-  <div class="setting-group"><h3>Leitura por voz do navegador</h3><label class="switch-line"><input type="checkbox" data-setting="tts" ${state.tts?'checked':''}> Ativar narrador local</label><label for="rate-select">Velocidade do narrador local</label><select id="rate-select" data-setting="rate"><option value="0.7" ${state.rate===.7?'selected':''}>Lenta (0,7×)</option><option value="1" ${state.rate===1?'selected':''}>Normal (1×)</option><option value="1.2" ${state.rate===1.2?'selected':''}>Rápida (1,2×)</option><option value="1.4" ${state.rate===1.4?'selected':''}>Muito rápida (1,4×)</option></select></div>
+  <div class="setting-group"><h3>Atalho do microfone</h3>
+  <label for="shortcut-select">Atalho de uma letra</label><select id="shortcut-select" data-setting="shortcut"><option value="j" ${state.shortcut==='j'?'selected':''}>J habilitado</option><option value="off" ${state.shortcut==='off'?'selected':''}>Desativar J isolado (manter Alt + J)</option></select>
+  <p class="setting-note">J tem uma saliência tátil. Se o leitor de tela capturar o atalho, use Tab até o botão Microfone do assistente e pressione Enter ou Espaço.</p></div>
+  <div class="setting-group"><h3>Leitura por voz do navegador</h3><label class="switch-line"><input type="checkbox" data-setting="tts" ${state.tts?'checked':''}> Ler em voz alta respostas que chegarem só em texto</label><label for="rate-select">Velocidade do narrador local</label><select id="rate-select" data-setting="rate"><option value="0.7" ${state.rate===.7?'selected':''}>Lenta (0,7×)</option><option value="1" ${state.rate===1?'selected':''}>Normal (1×)</option><option value="1.2" ${state.rate===1.2?'selected':''}>Rápida (1,2×)</option><option value="1.4" ${state.rate===1.4?'selected':''}>Muito rápida (1,4×)</option></select></div>
   <button class="btn btn-primary panel-cta" data-action="close-overlay">Concluir ${ico('check',19)}</button>
  </aside>`;
 }
@@ -349,9 +323,9 @@ function helpMarkup(){
  <div class="help-icon">${ico('headphones',33)}</div><span class="section-kicker">GUIA DE PRIMEIRO ACESSO</span>
  <h2 id="help-title">Como navegar neste site.</h2>
  <p>${esc(introText())}</p>
- <div class="help-shortcuts"><div>${ico('keyboard',24)}<strong>Computador</strong><span>Tab e Enter · J ou Alt + J para conversar</span></div><div>${ico('mic',24)}<strong>Celular</strong><span>Leitor de tela · toque duplo nos botões</span></div></div>
+ <div class="help-shortcuts"><div>${ico('keyboard',24)}<strong>Computador</strong><span>Tab e Enter · ${state.shortcut==='j'?'J ou Alt + J':'Alt + J'} para ligar e desligar</span></div><div>${ico('mic',24)}<strong>Celular</strong><span>Leitor de tela · toque duplo nos botões</span></div></div>
  <div class="help-buttons"><button class="btn btn-primary" data-action="intro">${ico('sound',19)} Ouvir instruções</button><button class="btn btn-secondary" data-action="close-overlay">Começar a explorar</button></div>
- <p class="help-footnote">Ao ativar o microfone, o áudio é processado pela API Gemini. O áudio automático de instruções pode ser bloqueado pelo navegador; nesse caso, use “Ouvir instruções”.</p>
+ <p class="help-footnote">Com o microfone ligado, o áudio da conversa é enviado ao Gemini.</p>
  </div>`;
 }
 function render() {
@@ -361,284 +335,284 @@ function render() {
  <div class="access-start" role="region" aria-label="Orientações de acessibilidade">
   <div class="access-start-inner">
    <p><strong>Bem-vindo à Ponto Digital.</strong> Este site funciona com leitor de tela, teclado e toque.</p>
-   <div class="access-start-actions"><button class="access-guide" data-action="intro">${ico('sound',19)} Ouvir instruções de navegação</button><button class="access-read" data-action="read-page">Ler a página atual</button><button class="access-talk" data-action="mic" aria-pressed="false">Conversar por voz (opcional)</button></div>
+   <div class="access-start-actions"><button class="access-guide" data-action="intro">${ico('sound',19)} Ouvir instruções de navegação</button><button class="access-read" data-action="read-page">Ler a página atual</button><button class="access-talk" data-action="mic" aria-pressed="false" aria-describedby="voice-status">Microfone do assistente</button><button data-action="activity" aria-controls="conversation" aria-expanded="${state.activity}">Conversa por texto</button></div>
   </div>
  </div>
  <header class="site-header"><div class="header-inner">
-  <a href="#inicio" data-nav="inicio" class="brand" aria-label="Ponto Digital, voltar ao início"><span class="brand-symbol" aria-hidden="true"><span></span><span></span><span></span></span><strong>PONTO<span>DIGITAL</span><small>SOLUÇÕES EM SOFTWARE</small></strong></a>
+  <a href="#inicio" data-nav="inicio" class="brand" aria-label="Ponto Digital Soluções em Software, início"><span class="brand-symbol" aria-hidden="true"><span></span><span></span><span></span></span><strong>PONTO <span>DIGITAL</span> <small>SOLUÇÕES EM SOFTWARE</small></strong></a>
   <nav class="desktop-nav" aria-label="Navegação principal">${navItems()}</nav>
-  <div class="header-actions"><button class="icon-button settings-trigger" data-action="settings" aria-label="Abrir preferências de acessibilidade">${ico('cog',21)}</button><button class="header-voice" data-action="help">${ico('headphones',19)} Guia de voz</button><button class="icon-button mobile-toggle" data-action="menu" aria-label="Abrir menu de navegação" aria-expanded="${state.menu}">${ico(state.menu?'x':'menu',24)}</button></div>
- </div>${state.menu?`<nav class="mobile-nav" aria-label="Navegação móvel">${navItems()}</nav>`:''}</header>
- <div id="notice" class="notice" ${state.notice?'':'hidden'}><div id="notice-text" role="alert">${esc(state.notice)}</div><button id="retry-live" class="quiet-button" data-action="retry-live" ${state.retry?'':'hidden'}>${retryLabel()}</button></div>
+  <div class="header-actions"><button class="icon-button settings-trigger" data-action="settings" aria-label="Abrir preferências de acessibilidade">${ico('cog',21)}</button><button class="header-voice" data-action="help">${ico('headphones',19)} Guia de voz</button><button class="icon-button mobile-toggle" data-action="menu" aria-label="${state.menu?'Fechar':'Abrir'} menu de navegação" aria-controls="mobile-nav" aria-expanded="${state.menu}">${ico(state.menu?'x':'menu',24)}</button></div>
+ </div><nav id="mobile-nav" class="mobile-nav" aria-label="Navegação principal" ${state.menu?'':'hidden'}>${navItems()}</nav></header>
+ <div id="notice" class="notice" ${state.notice?'':'hidden'}><div id="notice-text" role="alert">${esc(state.notice)}</div></div>
+ ${chatMarkup()}
  <main id="main" tabindex="-1">${pageMarkup()}</main>
  <footer class="site-footer"><div class="footer-top"><div class="footer-brand"><span class="footer-logo">PD<span>.</span></span><h2>Conectando pessoas ao futuro.</h2><p>Desenvolvimento de software B2B com um olhar para acessibilidade e inclusão.</p></div><div class="footer-links"><strong>NAVEGUE</strong>${NAV.map(x=>`<a href="#${x.id}" data-nav="${x.id}">${x.label}</a>`).join('')}</div><div class="footer-links"><strong>EXPERIÊNCIA</strong><button data-action="settings">Acessibilidade</button><button data-action="help">Ajuda e atalhos</button><button data-action="read-page">Ouvir página atual</button></div></div><div class="footer-bottom"><span>© 2026 Ponto Digital · Projeto acadêmico de Desenvolvimento de Sistemas</span><span>Feito para ser acessível, não apenas bonito.</span></div></footer>
  <div class="voice-shell">
   <div class="voice-dock" role="group" aria-label="Controles de leitura e conversa por voz">
-   <div class="voice-indicator"><span class="voice-status-dot" id="voice-dot" data-status="${state.status}"></span><div><strong id="voice-status" role="status" aria-live="polite" aria-atomic="true">${statusText()}</strong><span id="mic-hint">${mobile?'Toque para conversar':state.micMode==='hold'?'Segure J para falar':'Pressione J para ligar ou desligar'}</span></div></div>
-   <div class="voice-controls"><button class="small-voice-button" data-action="read-page" title="Ouvir página" aria-label="Ler página atual">${ico('sound',21)}</button><button class="small-voice-button" data-action="stop-speech" title="Parar leitura" aria-label="Parar leitura">${ico('stop',18)}</button><button class="mic-main" id="mic-button" data-action="mic" data-active="${bridge.recording}" aria-pressed="${bridge.recording}" aria-label="${bridge.recording?'Parar de falar':'Ativar microfone'}">${ico('mic',25)}</button><button class="small-voice-button" data-action="activity" title="Ver conversa" aria-label="Abrir histórico da conversa">${ico('sparkle',21)}</button></div>
+   <div class="voice-indicator"><span class="voice-status-dot" id="voice-dot" data-status="${state.status}"></span><div><strong id="voice-status" role="status" aria-live="polite" aria-atomic="true">${statusText()}</strong><span id="mic-hint"></span></div></div>
+   <div class="voice-controls"><button class="small-voice-button" data-action="read-page" title="Ouvir página" aria-label="Ler página atual">${ico('sound',21)}</button><button class="small-voice-button" data-action="stop-speech" title="Parar áudio" aria-label="Parar áudio">${ico('stop',18)}</button><button class="mic-main" id="mic-button" data-action="mic" data-active="${bridge.recording}" aria-pressed="${bridge.recording}" aria-label="Microfone do assistente" aria-describedby="voice-status">${ico('mic',25)}</button><button class="small-voice-button" data-action="activity" title="Conversa por texto" aria-label="Conversa por texto" aria-controls="conversation" aria-expanded="${state.activity}">${ico('sparkle',21)}</button></div>
   </div>
   <div class="dock-subtext"><span id="tts-indicator" role="status" aria-live="polite">${readingStatus()}</span><span>Leitura local sem conexão</span></div>
  </div>
- ${state.activity?`<section class="activity-panel" aria-label="Conversa do assistente"><div class="activity-head"><div><span class="section-kicker">RECURSO OPCIONAL</span><h2>Conversa por voz</h2></div><button class="icon-button" data-action="activity" aria-label="Fechar conversa">${ico('x')}</button></div><div id="activity-list" class="activity-list" role="log" aria-live="polite" aria-busy="${streamingActivity.size>0}">${activityMarkup()}</div><form id="chat-form" class="chat-form"><label for="chat-text" class="sr-only">Digite uma mensagem para o assistente</label><input id="chat-text" maxlength="600" placeholder="Ou digite sua pergunta…" autocomplete="off" required><button type="submit" aria-label="Enviar mensagem">${ico('arrow',21)}</button></form><button class="quiet-button" id="disconnect" data-action="disconnect" ${bridge.connected?'':'hidden'}>Encerrar sessão de voz</button></section>`:''}
- ${state.settings?settingsMarkup():''}
- ${state.help?helpMarkup():''}
- <div class="sr-only" role="status" aria-live="polite" id="screen-announcement"></div>
+ <div id="overlay"></div>
  `;
  syncLive();
 }
-function announce(text){const e=$('screen-announcement');if(e){e.textContent='';requestAnimationFrame(()=>{if(e)e.textContent=text;});}}
+function chatMarkup(){
+ return `<section id="conversation" class="activity-panel" aria-labelledby="conversation-title" ${state.activity?'':'hidden'}>
+  <div class="activity-head"><h2 id="conversation-title">Conversa sobre a Ponto Digital</h2><button class="icon-button" data-action="close-activity" aria-label="Fechar conversa">${ico('x')}</button></div>
+  <div id="activity-list" class="activity-list" role="log" aria-label="Histórico de mensagens" aria-live="off" tabindex="0">${activityMarkup()}</div>
+  <form id="chat-form" class="chat-form">
+   <label for="chat-text" class="sr-only">Pergunta sobre a Ponto Digital</label>
+   <input id="chat-text" type="text" maxlength="600" enterkeyhint="send" placeholder="Digite sua pergunta…" autocomplete="off" required value="${esc(state.draft)}">
+   <button type="submit" aria-label="Enviar mensagem">${ico('arrow',21)}</button>
+  </form>
+  <p id="chat-voice-status" class="chat-voice-status" aria-hidden="true"></p>
+  <div class="chat-actions"><button class="quiet-button" data-action="mic" aria-pressed="${bridge.recording}" aria-describedby="voice-status">Microfone do assistente</button><button class="quiet-button" data-action="stop-speech">Parar áudio</button><button class="quiet-button" id="disconnect" data-action="disconnect" hidden>Encerrar sessão</button></div>
+ </section>`;
+}
+function announce(text){
+ const region=$('screen-announcement');
+ region.textContent='';
+ requestAnimationFrame(()=>{region.textContent=text;});
+}
 function navigate(id,{historyMode='push'}={}){
- if(!Object.hasOwn(CONTENT,id)){notify('Esta página não existe.');return false;}
- if(state.page!==id)stopReading();
- state.page=id;state.menu=false;state.help=false;state.settings=false;
- if(historyMode==='push' && location.hash!==('#'+id))history.pushState({page:id},'','#'+id);
- render();window.scrollTo({top:0,behavior:'instant'});
- const heading=$('main-heading');if(heading)heading.focus({preventScroll:true});
- announce('Página '+NAV.find(x=>x.id===id)?.label+'. '+CONTENT[id].title);
- return true;
+ if(!Object.hasOwn(CONTENT,id))return;
+ if(state.page!==id && speaking)stopSpeech();
+ state.page=id;
+ state.menu=false;
+ if(historyMode==='push' && location.hash!=='#'+id)history.pushState({page:id},'','#'+id);
+ render();
+ $('main-heading').focus();
+ $('main-heading').scrollIntoView({block:'start'});
 }
-const microphoneDenied='Microfone bloqueado pelo navegador. Você ainda pode conversar por texto.';
-let microphoneOpening=false;
-async function beginMicrophone(isHold=false){
- if(bridge.recording){if(!isHold)bridge.stopMicrophone();return;}
- if(microphoneOpening)return;
- microphoneOpening=true;
- const model=currentModel(), thinking=state.thinking;
- let stream;
- stopReading();
- try {
-   bridge.initOutput();
-   stream=await bridge.requestMicrophone();
-   if((isHold&&!holdRequested) || model!==currentModel() || thinking!==state.thinking)return;
-   if(state.retry || state.status==='stalled'){state.retry=null;notify('');}
-   if(!await bridge.connect(model,thinking))return;
-   if(isHold&&!holdRequested){speak('Conexão pronta. Segure a tecla J novamente para falar.',{force:true});return;}
-   if(await bridge.startMicrophone(stream))stream=null;
- } catch(e){
-   if(e.name==='NotAllowedError' || e.name==='PermissionDeniedError'){
-     state.activity=true;
-     render();
-     notify(microphoneDenied);
-     $('chat-text')?.focus();
-     return;
-   }
-   notify(e.message||'Não foi possível ativar o microfone.');
- } finally {
-   stream?.getTracks().forEach(track=>track.stop());
-   microphoneOpening=false;
+const microphoneDenied='Sem permissão de microfone. Você pode enviar sua pergunta por texto.';
+function cancelMicrophone(){
+ if(!microphoneOpening)return;
+ const {controller,stream}=microphoneOpening;
+ microphoneOpening=null;
+ controller.abort();
+ stream?.getTracks().forEach(track=>track.stop());
+ syncLive();
+ announce('Ativação do microfone cancelada.');
+}
+async function toggleMicrophone(trigger){
+ if(bridge.recording){bridge.stopMicrophone();return;}
+ if(microphoneOpening){cancelMicrophone();return;}
+ const controller=new AbortController();
+ const attempt={controller,stage:'Aguardando permissão do microfone…'};
+ microphoneOpening=attempt;
+ syncLive();
+ stopAudio();
+ notify('');
+ try{
+   bridge.prepareAudio();
+   attempt.stream=await bridge.requestMicrophone();
+   controller.signal.throwIfAborted();
+   attempt.stage='Preparando microfone. Aguarde para falar.';
+   syncLive();
+   if(!await bridge.connect())return;
+   controller.signal.throwIfAborted();
+   if(await bridge.startMicrophone(attempt.stream,controller.signal))attempt.stream=null;
+ }catch(error){
+   if(controller.signal.aborted)return;
+   const permission=['NotAllowedError','PermissionDeniedError'].includes(error.name);
+   const captureError=['NotFoundError','NotReadableError','NotSupportedError','SecurityError'].includes(error.name);
+   if(permission || captureError){
+     setActivity(true,trigger);
+     notify(permission?microphoneDenied:'O microfone está indisponível. Você pode enviar sua pergunta por texto.');
+   }else notify(error.message||'Não foi possível ativar o microfone.');
+ }finally{
+   attempt.stream?.getTracks().forEach(track=>track.stop());
+   if(microphoneOpening===attempt)microphoneOpening=null;
+   syncLive();
  }
 }
-function endMicrophone(){bridge.stopMicrophone();}
-const normalizeText=text=>String(text??'').normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase().trim();
-function resolvePage(text){
- const page=normalizeText(text).replace(/^#/,'');
- return NAV.find(({id,label})=>id===page||normalizeText(label)===page)?.id;
-}
-function showToolResults(responses){
- for(const {name,response} of responses){
-   const result=response.result;
-   if(name==='navigate_to' && result?.success){
-     const label=NAV.find(({id})=>id===result.page).label;
-     addActivity('Ponto','Página '+label+' aberta.');
-     if(result.silent)bridge.mutePlayback();
-   }
-   const reading=name==='navigate_to'?result?.narration:
-     (name==='read_page' || name==='read_section')?result:null;
-   if(!reading || reading.cancelled)continue;
-   if(reading.success){
-     bridge.markLocalNarration();
-     addActivity('Ponto','Lendo '+reading.title.replace(/[.!?]$/,'')+'.');
-   }
-   else if(reading.text && reading.page===state.page)bridge.expectNarration();
-   else if(reading.error)notify(reading.error);
+function setActivity(open,trigger){
+ if(open && trigger?.getClientRects().length && trigger!==document.body && !$('conversation').contains(trigger))chatTrigger=trigger;
+ state.activity=open;
+ $('conversation').hidden=!open;
+ for(const button of document.querySelectorAll('[data-action="activity"]'))button.setAttribute('aria-expanded',String(open));
+ if(open){
+   const log=$('activity-list');
+   log.scrollTop=log.scrollHeight;
+   $('chat-text').focus();
+ }else{
+   const restore=chatTrigger?.isConnected?chatTrigger:document.querySelector('[data-action="activity"]');
+   restore?.focus();
  }
 }
-async function readWithNarrator(text,details){
- const request=readingVersion;
- if(await speak(text,{agent:true}))return {success:true,...details};
- if(request!==readingVersion)return {success:false,cancelled:true,...details};
- return {success:false,...details,error:'Narrador local indisponível.',text};
-}
-async function executeTool(name,args){
- const current=CONTENT[state.page];
- switch(name){
-  case 'navigate_to': {
-    const id=resolvePage(args.page);
-    if(!id)return {success:false,error:'Página inexistente',available:NAV.map(x=>x.id)};
-    if(id!==state.page)navigate(id);
-    const result={success:true,page:id,title:CONTENT[id].title,description:CONTENT[id].description};
-    if(args.silent===true)return {...result,silent:true};
-    if(args.readAloud!==true)return result;
-    const narration=await executeTool(args.section?'read_section':'read_page',{section:args.section});
-    return {...result,narration};
-  }
-  case 'stop_reading':stopReading();return {success:true};
-  case 'get_navigation_options':return NAV.map(x=>({page:x.id,label:x.label}));
-  case 'get_page_content':{
-    const id=args.page?resolvePage(args.page):state.page;
-    if(!id)return {error:'Página inexistente',available:NAV.map(x=>x.id)};
-    return {page:id,title:CONTENT[id].title,description:CONTENT[id].description,sections:CONTENT[id].sections};
-  }
-  case 'read_page':return readWithNarrator(pageText(state.page),{page:state.page,title:current.title});
-  case 'read_section':
-  case 'summarize_section':{
-    const query=normalizeText(args.section);
-    const match=query&&current.sections.find(x=>normalizeText(x.title).includes(query));
-    if(!match)return {error:'Seção não encontrada',available:current.sections.map(x=>x.title)};
-    if(name==='read_section')return readWithNarrator(match.title+'. '+match.body,{page:state.page,title:match.title});
-    return {page:state.page,title:match.title,text:match.body,instruction:'Resuma de forma clara para o visitante.'};
-  }
-  case 'set_theme': {
-    if(!['light','dark','contrast'].includes(args.theme))return {error:'Tema inválido'};
-    state.theme=args.theme;persist('theme',state.theme);render();return {success:true,theme:state.theme};
-  }
-  case 'set_font_scale':{
-    const scale=Number(args.scale);if(!Number.isFinite(scale))return {error:'Escala inválida'};
-    state.font=Math.max(1,Math.min(1.55,scale));persist('font',state.font);render();return {success:true,scale:state.font};
-  }
-  case 'set_microphone_mode':{
-    if(!['toggle','hold'].includes(args.mode))return {error:'Modo inválido'};
-    state.micMode=args.mode;persist('micMode',state.micMode);render();return {success:true,microphoneMode:state.micMode};
-  }
-  case 'set_narration_speed':{
-    const rate=Number(args.rate);if(!Number.isFinite(rate))return {error:'Taxa inválida'};
-    state.rate=Math.max(.7,Math.min(1.4,rate));persist('rate',state.rate);render();return {success:true,localNarratorSpeed:state.rate,note:'Ajusta TTS do navegador, não a voz nativa do Gemini.'};
-  }
-  case 'get_accessibility_settings':return {theme:state.theme,font:state.font,microphoneMode:state.micMode,keyboardShortcut:state.shortcut,localSpeechEnabled:state.tts,localSpeechRate:state.rate,model:state.model};
-  default:return {error:'Ferramenta não autorizada'};
- }
+function setMenu(open){
+ state.menu=open;
+ $('mobile-nav').hidden=!open;
+ const button=document.querySelector('.mobile-toggle');
+ button.setAttribute('aria-expanded',String(open));
+ button.setAttribute('aria-label',(open?'Fechar':'Abrir')+' menu de navegação');
+ button.innerHTML=ico(open?'x':'menu',24);
+ button.focus();
 }
 function openDialog(kind,trigger){
- previousDialogFocus=trigger?.getAttribute('data-action')||'settings';
- state.help=kind==='help';state.settings=kind==='settings';render();
- const focusTarget=kind==='settings'?document.querySelector('.side-panel .icon-button'):document.querySelector('.help-close');
- focusTarget?.focus();
- document.getElementById('main')?.setAttribute('inert','');
- document.querySelector('.site-header')?.setAttribute('inert','');
- document.querySelector('.access-start')?.setAttribute('inert','');
- document.querySelector('.voice-shell')?.setAttribute('inert','');
- document.querySelector('.site-footer')?.setAttribute('inert','');
- document.querySelector('.activity-panel')?.setAttribute('inert','');
+ previousDialogFocus=trigger;
+ const overlay=$('overlay');
+ overlay.innerHTML=kind==='settings'?settingsMarkup():helpMarkup();
+ for(const element of overlay.parentElement.children){
+   if(element!==overlay)element.inert=true;
+ }
+ document.querySelector('.skip-link').inert=true;
+ overlay.querySelector('[data-action="close-overlay"]:is(button)').focus();
 }
 function closeDialog(){
- const restore=previousDialogFocus;
- state.help=false;state.settings=false;render();
- const selector=restore==='help'?'[data-action="help"]':restore==='settings'?'[data-action="settings"]':'[data-action="intro"]';
- document.querySelector(selector)?.focus();
+ const overlay=$('overlay');
+ overlay.replaceChildren();
+ for(const element of overlay.parentElement.children)element.inert=false;
+ document.querySelector('.skip-link').inert=false;
+ previousDialogFocus?.focus();
+ previousDialogFocus=null;
 }
 function setSetting(key,value){
- const focusedId=document.activeElement?.id;
  if(['font','rate'].includes(key))value=Number(value);
- if(key==='tts')value=Boolean(value);
- if((key==='model' || key==='thinking')&&(state[key]!==value||state.sessionModel)){
-   state.sessionModel=null;
-   state.retry=null;
-   state.notice='';
-   stopReading();
-   bridge.disconnect();
- }
  if(key==='tts'&&!value)stopSpeech();
- state[key]=value;persist(key,value);render();
- if(focusedId)document.getElementById(focusedId)?.focus();
- if(state.settings){
-  document.getElementById('main')?.setAttribute('inert','');
-  document.querySelector('.site-header')?.setAttribute('inert','');
-  document.querySelector('.access-start')?.setAttribute('inert','');
-  document.querySelector('.voice-shell')?.setAttribute('inert','');
-  document.querySelector('.site-footer')?.setAttribute('inert','');
-  document.querySelector('.activity-panel')?.setAttribute('inert','');
- }
- announce('Configuração alterada: '+key);
+ state[key]=value;
+ persist(key,value);
+ applyPrefs();
+ syncLive();
+}
+function refreshLab(focusSelector,message){
+ document.querySelector('.lab').outerHTML=labMarkup();
+ document.querySelector(focusSelector)?.focus();
+ announce(message+' Saldo '+$('demo-balance').textContent+'.');
 }
 const app=$('app');
+document.querySelector('.skip-link').addEventListener('click',event=>{
+ event.preventDefault();
+ $('main').focus();
+ $('main').scrollIntoView({block:'start'});
+});
 app.addEventListener('click',event=>{
  const nav=event.target.closest('[data-nav]');
- if(nav){event.preventDefault();navigate(nav.dataset.nav);return;}
+ if(nav){
+   if(event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
+   event.preventDefault();
+   navigate(nav.dataset.nav);
+   return;
+ }
  const read=event.target.closest('[data-read-section]');
- if(read){const section=CONTENT[state.page].sections[Number(read.dataset.readSection)];if(section)speak(section.title+'. '+section.body,{force:true});return;}
- const prompt=event.target.closest('[data-prompt]');
- if(prompt){state.activity=true;render();sendChatMessage(prompt.dataset.prompt).catch(e=>notify(e.message||'Não foi possível conectar ao Gemini.'));return;}
- const btn=event.target.closest('[data-action]');if(!btn)return;
- switch(btn.dataset.action){
-  case 'menu':state.menu=!state.menu;render();break;
-  case 'settings':openDialog('settings',btn);break;
-  case 'help':openDialog('help',btn);break;
+ if(read){
+   const section=CONTENT[state.page].sections[Number(read.dataset.readSection)];
+   if(section)speak(section.title+'. '+section.body,{force:true});
+   return;
+ }
+ const button=event.target.closest('[data-action]');
+ if(!button)return;
+ switch(button.dataset.action){
+  case 'menu':setMenu(!state.menu);break;
+  case 'settings':openDialog('settings',button);break;
+  case 'help':openDialog('help',button);break;
   case 'close-overlay':closeDialog();break;
-  case 'intro':if(state.help)closeDialog();speak(introText(),{force:true});break;
+  case 'intro':speak(introText(),{force:true});break;
   case 'read-page':speak(pageText(state.page),{force:true});break;
-  case 'mic':if(ignoreMicClick){ignoreMicClick=false;break;} beginMicrophone();break;
-  case 'activity':state.activity=!state.activity;render();break;
-  case 'disconnect':state.sessionModel=null;state.retry=null;stopReading();bridge.disconnect();notify('Sessão encerrada.');break;
-  case 'retry-live':retryWithFlash();break;
-  case 'clear-demo':state.demo=[];render();announce('Simulação limpa.');break;
-  case 'stop-speech':stopReading();break;
+  case 'mic':toggleMicrophone(button);break;
+  case 'activity':setActivity(!state.activity,button);break;
+  case 'close-activity':setActivity(false);break;
+  case 'disconnect':
+   cancelMicrophone();
+   stopAudio();
+   bridge.disconnect();
+   $('chat-text').focus();
+   announce('Sessão do assistente encerrada.');
+   break;
+  case 'clear-demo':
+   state.demo=[];
+   refreshLab('[data-action="clear-demo"]','Simulação limpa.');
+   break;
+  case 'stop-speech':
+   stopAudio();
+   announce('Áudio interrompido.');
+   break;
  }
 });
-app.addEventListener('pointerdown',event=>{
- const btn=event.target.closest('#mic-button');
- if(!btn||state.micMode!=='hold'||event.pointerType==='mouse')return;
- ignoreMicClick=true;holdRequested=true;beginMicrophone(true);
-});
-window.addEventListener('pointerup',()=>{
- if(state.micMode==='hold'&&holdRequested){holdRequested=false;endMicrophone();}
-});
-window.addEventListener('pointercancel',()=>{holdRequested=false;endMicrophone();});
 app.addEventListener('change',event=>{
  const control=event.target.closest('[data-setting]');
  if(control)setSetting(control.dataset.setting,control.type==='checkbox'?control.checked:control.value);
 });
+app.addEventListener('input',event=>{
+ if(event.target.id==='chat-text')state.draft=event.target.value;
+});
+let sendingText=false;
 async function sendChatMessage(text){
- if(state.retry || state.status==='stalled' || state.notice===microphoneDenied){state.retry=null;notify('');}
- bridge.initOutput();
- stopReading();
- if(await bridge.connect(currentModel(),state.thinking))bridge.sendText(text);
+ if(sendingText)return;
+ sendingText=true;
+ state.draft='';
+ $('chat-text').value='';
+ try{
+   cancelMicrophone();
+   notify('');
+   bridge.prepareAudio();
+   stopAudio();
+   if(bridge.recording)bridge.stopMicrophone();
+   if(await bridge.connect())bridge.sendText(text);
+   else if(!state.draft)state.draft=$('chat-text').value=text;
+ }catch(error){
+   if(!state.draft)state.draft=$('chat-text').value=text;
+   notify(error.message||'Não foi possível enviar a mensagem.');
+ }finally{
+   sendingText=false;
+ }
 }
 app.addEventListener('submit',event=>{
  if(event.target.id==='demo-form'){
-   event.preventDefault();const data=new FormData(event.target);
-   const value=Number(data.get('amount'));const description=String(data.get('description')||'').trim();
+   event.preventDefault();
+   const data=new FormData(event.target);
+   const value=Number(data.get('amount'));
+   const description=String(data.get('description')||'').trim();
    if(!Number.isFinite(value)||value<=0||!description)return;
-   state.demo.push({value,description,type:data.get('type')==='income'?'income':'expense'});render();announce('Lançamento adicionado.');}
+   state.demo.push({value,description,type:data.get('type')==='income'?'income':'expense'});
+   refreshLab('#demo-description','Lançamento adicionado.');
+ }
  if(event.target.id==='chat-form'){
-   event.preventDefault();const value=$('chat-text')?.value.trim();
-   if(!value)return;
-   const input=$('chat-text');if(input)input.value='';
-   sendChatMessage(value).catch(e=>{notify(e.message||'Não foi possível enviar a mensagem.'); const box=$('chat-text');if(box)box.value=value;});
+   event.preventDefault();
+   const value=$('chat-text').value.trim();
+   if(value)sendChatMessage(value);
  }
 });
 window.addEventListener('keydown',event=>{
+ const dialog=$('overlay').querySelector('[role="dialog"]');
  if(event.key==='Escape'){
-   if(speaking || narrationState==='pending' || narrationState==='playing')stopReading();
-   else if(state.help||state.settings){closeDialog();}
-   else if(state.menu||state.activity){state.menu=state.activity=false;render();}
+   if(dialog)closeDialog();
+   else if(microphoneOpening)cancelMicrophone();
+   else if(bridge.recording)bridge.stopMicrophone();
+   else if(speaking || bridge.scheduled.size || (bridge.turn && !bridge.silenceOutput))stopAudio();
+   else if(state.menu)setMenu(false);
+   else if(state.activity)setActivity(false);
    return;
  }
- if((state.help||state.settings)&&event.key==='Tab'){
-   const dialog=document.querySelector('[role="dialog"][aria-modal="true"]');
-   const choices=[...dialog.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled])')].filter(x=>x.getClientRects().length);
-   if(choices.length){
-     const first=choices[0],last=choices.at(-1);
-     if(event.shiftKey&&(document.activeElement===first||!dialog.contains(document.activeElement))){event.preventDefault();last.focus();}
-     else if(!event.shiftKey&&(document.activeElement===last||!dialog.contains(document.activeElement))){event.preventDefault();first.focus();}
+ if(dialog){
+   if(event.key==='Tab'){
+     const choices=[...dialog.querySelectorAll('a[href],button,input,select')].filter(element=>!element.disabled && element.getClientRects().length);
+     const first=choices[0], last=choices.at(-1);
+     if(event.shiftKey && document.activeElement===first){event.preventDefault();last?.focus();}
+     else if(!event.shiftKey && document.activeElement===last){event.preventDefault();first?.focus();}
    }
    return;
  }
- if(state.help||state.settings)return;
- if(event.altKey&&event.key.toLowerCase()==='j'){
-   event.preventDefault();beginMicrophone();return;
- }
- if(state.shortcut==='off'||event.key.toLowerCase()!=='j'||event.altKey||event.ctrlKey||event.metaKey||event.repeat)return;
- if(['INPUT','TEXTAREA','SELECT','BUTTON','A'].includes(document.activeElement?.tagName)||document.activeElement?.isContentEditable)return;
+ if(event.defaultPrevented || event.key.toLowerCase()!=='j' || event.repeat || event.isComposing || event.ctrlKey || event.metaKey || event.shiftKey)return;
+ if(!event.altKey && state.shortcut==='off')return;
+ if(event.target.closest?.('input,textarea,select,[contenteditable]:not([contenteditable="false"])'))return;
  event.preventDefault();
- if(state.micMode==='hold'){holdRequested=true;beginMicrophone(true);}
- else beginMicrophone();
+ toggleMicrophone(document.activeElement);
 });
-window.addEventListener('keyup',event=>{
- if(event.key.toLowerCase()==='j'&&state.micMode==='hold'&&holdRequested){holdRequested=false;endMicrophone();}
-});
-function syncUrl(){const page=location.hash.slice(1)||'inicio';if(Object.hasOwn(CONTENT,page)&&page!==state.page)navigate(page,{historyMode:'none'});}
+function syncUrl(){
+ const page=location.hash.slice(1)||'inicio';
+ if(Object.hasOwn(CONTENT,page)&&page!==state.page){
+   if($('overlay').firstElementChild)closeDialog();
+   navigate(page,{historyMode:'none'});
+ }
+}
 window.addEventListener('hashchange',syncUrl);
 window.addEventListener('popstate',syncUrl);
-window.addEventListener('pagehide',()=>{stopReading();bridge.disconnect();});
+window.addEventListener('pagehide',()=>{
+ cancelMicrophone();
+ stopAudio();
+ bridge.disconnect();
+});
 render();
-setTimeout(()=>{if(state.tts&&!speaking&&!bridge.opening&&!bridge.connected)speak(introText());},600);

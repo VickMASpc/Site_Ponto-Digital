@@ -8,11 +8,12 @@ export const NAV = [
 ];
 export const CONTENT = {
   inicio: {
-    title: 'Soluções digitais para empresas.',
-    description: 'A Ponto Digital desenvolve software B2B para ajudar empresas a organizar processos e trabalhar melhor. O site conta com recursos de leitura por voz e acessibilidade.',
+    title: 'Sua empresa mais digital. Seu trabalho mais simples.',
+    description: 'Criamos soluções em software para ajudar empresas a organizar processos, reduzir tarefas repetitivas e trabalhar melhor.',
     sections: [
       { title: 'Uma empresa pensada para o digital', body: 'Somos uma empresa brasileira de desenvolvimento de software B2B, com foco em soluções digitais para outras empresas.' },
-      { title: 'Uma nova forma de acessar informação', body: 'Nosso assistente pode apresentar os serviços, mudar páginas, ler informações e configurar recursos de acessibilidade por comando de voz.' }
+      { title: 'Uma nova forma de acessar informação', body: 'O site oferece leitura local, navegação acessível e uma conversa por voz ou texto com o assistente sobre a Ponto Digital.' },
+      { title: 'Conectando pessoas ao futuro', body: 'A acessibilidade faz parte da experiência dos serviços e do site. A atividade principal da empresa é o desenvolvimento de software B2B.' }
     ]
   },
   empresa: {
@@ -21,7 +22,8 @@ export const CONTENT = {
     sections: [
       { title: 'O que fazemos', body: 'Trabalhamos com a proposta de desenvolvimento e manutenção de software para empresas, incluindo soluções SaaS sob medida.' },
       { title: 'Nossa direção', body: 'Simplificar processos, melhorar o acesso à tecnologia e oferecer experiências utilizáveis por pessoas com diferentes necessidades.' },
-      { title: 'Onde estamos', body: 'Nossa proposta empresarial é sediada em São Paulo, Brasil, com intenção de oferecer serviços digitais também para clientes internacionais.' },
+      { title: 'Onde estamos', body: 'A sede proposta no projeto fica na Chácara Santo Antônio, em São Paulo, Brasil. A proposta também prevê atender clientes internacionais com serviços digitais.' },
+      { title: 'Projeto acadêmico', body: 'A Ponto Digital foi criada como projeto multidisciplinar de Desenvolvimento de Sistemas, documentado no relatório assinado por Victor Monteiro. O material apresenta o planejamento da empresa e uma demonstração interativa para a feira.' },
       { title: 'Equipe do projeto', body: 'Diego Alves: direção da empresa. Gabriel Oliveira: vendas e marketing. Jonathan Vrena: gerência. Matheus Morais: desenvolvimento e marketing. Victor Monteiro: desenvolvimento chefe. Yamil Josué: apoio ao desenvolvimento. Vinicius Ferreira: apoio à gerência e vendas.' }
     ]
   },
@@ -32,17 +34,18 @@ export const CONTENT = {
       { title: 'Desenvolvimento de software B2B', body: 'O foco principal da empresa é criar e manter aplicações que atendam processos e necessidades de outras empresas.' },
       { title: 'ERP modular — conceito', body: 'Ideia em avaliação: um sistema de gestão para microempresas, incluindo controle financeiro simplificado e estoque.' },
       { title: 'Gestão de contratos com IA — conceito', body: 'Ideia em avaliação: uma plataforma para ajudar a organizar contratos, prazos e renovações. Não é apresentada como produto já lançado.' },
-      { title: 'Demonstração de MVP', body: 'O projeto acadêmico prevê um MVP do tipo Mágico de Oz, com inserção manual de dados financeiros. A demonstração está no Laboratório.' }
+      { title: 'Demonstração de MVP', body: 'O projeto acadêmico prevê um MVP do tipo Mágico de Oz, com inserção manual de dados financeiros. A demonstração está no Laboratório.' },
+      { title: 'Validação do MVP', body: 'A proposta é apresentar o protótipo, colher retorno com entrevistas ou questionários e avaliar utilidade, facilidade de uso e interesse. A inclusão de pessoas cegas ou com baixa visão orienta a experiência do site.' }
     ]
   },
   acessibilidade: {
     title: 'Um site para ser visto. E ouvido.',
     description: 'A experiência é construída com navegação sem mouse, leitura por voz, alto contraste, ampliação de texto e assistente conversacional.',
     sections: [
-      { title: 'Navegação por voz', body: 'No computador, use a tecla J para o microfone. No celular, toque no botão de microfone fixo. É possível escolher entre modo de alternância e pressionar para falar.' },
-      { title: 'Leitura em voz alta', body: 'O narrador do navegador consegue ler as informações do site mesmo quando o assistente Gemini estiver indisponível.' },
-      { title: 'Adaptação visual', body: 'Altere o tamanho da fonte, o contraste e o tema nas configurações. Os recursos também podem ser alterados por comandos de voz quando o Gemini estiver conectado.' },
-      { title: 'Acessibilidade verificável', body: 'A interface é desenvolvida com semântica HTML, navegação por teclado, regiões de anúncio e controles com nomes acessíveis. Não afirmamos certificação WCAG sem auditoria.' }
+      { title: 'Conversa sobre a empresa', body: 'No computador, a tecla J liga ou desliga o microfone. Alt mais J é uma alternativa. No celular, ative o botão Microfone do assistente. Aguarde o aviso de microfone ligado antes de falar. A conversa também aceita mensagens de texto, sem permissão de microfone.' },
+      { title: 'Leitura em voz alta', body: 'Os botões de leitura usam a voz do navegador. Você também pode usar o leitor de tela para navegar por títulos, links e botões em todas as páginas.' },
+      { title: 'Adaptação visual', body: 'Altere o tamanho da fonte, o contraste e o tema nas configurações. Nas preferências você também pode desligar o atalho J isolado.' },
+      { title: 'Acessibilidade verificável', body: 'A interface é desenvolvida com semântica HTML, navegação por teclado, regiões de anúncio e controles com nomes acessíveis.' }
     ]
   },
   impacto: {
@@ -57,15 +60,21 @@ export const CONTENT = {
   },
   laboratorio: {
     title: 'Experimente, não apenas observe.',
-    description: 'Demonstrações interativas de navegação acessível e uma simulação simples de movimentações financeiras do MVP acadêmico.',
+    description: 'Simulação de movimentações financeiras do MVP acadêmico e um espaço para conhecer a empresa pela conversa.',
     sections: [
       { title: 'Simulador financeiro', body: 'Registre receitas e despesas fictícias para ver o saldo ser recalculado instantaneamente. Os dados ficam apenas nesta sessão do navegador.' },
-      { title: 'Teste a experiência por voz', body: 'Experimente pedir ao assistente que leia a página, navegue para soluções, aumente a fonte ou altere o modo do microfone.' }
+      { title: 'Teste a experiência por voz', body: 'Experimente perguntar quais soluções a Ponto Digital desenvolve, o que é o MVP financeiro ou quem faz parte da equipe.' }
     ]
   }
 };
 export function pageText(id) {
   const p = CONTENT[id];
   if (!p) return '';
-  return [p.title, p.description, ...p.sections.flatMap(x => [x.title, x.body])].join('. ');
+  return [p.title, p.description, ...p.sections.flatMap(x => [x.title, x.body])]
+    .map(text => /[.!?]$/.test(text) ? text : text + '.')
+    .join(' ');
+}
+
+export function companyKnowledge() {
+  return NAV.map(({id, label}) => label + '\n' + pageText(id)).join('\n\n');
 }

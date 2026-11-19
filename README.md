@@ -1,13 +1,13 @@
 # Ponto Digital — versão 2.0
 
-Site institucional da Ponto Digital, com identidade visual **azul**, conteúdo B2B em primeiro plano e recursos complementares de navegação por voz, leitura local e integração à API **Gemini 3.8 Live** / **Gemini 3.8 Live Extended Thinking**.
+Site institucional da Ponto Digital, com identidade visual **azul**, conteúdo B2B em primeiro plano e navegação acessível, leitura local e conversa institucional com **Gemini 3.8 Live** (base).
 
 ## Estrutura
 
 - `site/` — aplicativo Vite (JS modular + CSS responsivo; não é HTML estático de apresentação).
-- `site/src/data.js` — conteúdo das páginas; compartilhado com as ferramentas do assistente.
+- `site/src/data.js` — conteúdo das páginas e fonte de conhecimento do assistente.
 - `site/src/main.js` — interface, navegação, teclado J, TTS, configurações, demo.
-- `site/src/live.js` — WebSocket via SDK GenAI, áudio PCM bidirecional e function calling.
+- `site/src/live.js` — WebSocket via SDK GenAI, áudio PCM bidirecional e transcrição.
 - `worker/` — backend de tokens temporários Cloudflare, executado em `/token` quando implantado no Worker.
 - `wrangler.toml` (raiz) — configuração para implantar a interface Vite e o endpoint `/token` **juntos no Worker `site-ponto-digital`** usando os comandos já configurados no painel.
 - `docs/` — **build gerado pelo Vite** (não editar manualmente).
@@ -17,12 +17,12 @@ O `index.html` da raiz é somente compatibilidade: quem ainda estiver usando Git
 
 ## Uso e acessibilidade
 
-- A primeira região da interface apresenta instruções claras e controles acessíveis: **Ouvir instruções**, **Ler a página atual** e **Conversar por voz (opcional)**. O narrador local funciona sem Gemini. O navegador pode bloquear a reprodução automática; o botão inicial permanece acessível por teclado e leitor de tela.
-- Em computadores, **J** ativa o microfone (segurar por padrão; alterável para alternância). **Alt + J** é um caminho alternativo; J isolado pode ser desativado nas preferências para evitar conflitos com tecnologias assistivas e entrada de fala. Controles com Tab/Enter sempre existem. Não interceptamos J isolado dentro de formulários ou botões.
-- Em dispositivos de toque, o botão de microfone fixo permite toque para ligar/desligar ou modo segurar.
-- Controles para tema, alto contraste, ampliação de letras, narrador local, atalho J, modelo e nível de pensamento do Extended. A navegação por páginas posiciona foco no título, e diálogos mantêm foco interno e devolvem ao controle de origem.
-- Ferramentas reais: navigate_to, get_page_content, read_section, summarize_section, get_navigation_options, set_theme, set_font_scale, set_microphone_mode, set_narration_speed, get_accessibility_settings.
-- Modo laboratório de lançamentos financeiros fictícios e apenas em memória.
+- O primeiro link salta para o conteúdo. A região de orientações oferece instruções faladas, leitura da página, botão de microfone e conversa por texto.
+- **J** alterna o microfone no computador. **Alt + J** continua disponível ao desligar o J isolado nas preferências. O atalho respeita campos de edição. Enter, Espaço e os gestos habituais dos leitores de tela ativam os botões nativos.
+- No celular, ative **Microfone do assistente**, aguarde o aviso **Microfone ligado. Fale agora.** e ative novamente para enviar. Se o microfone estiver bloqueado, a conversa abre no campo de texto.
+- O Gemini conversa sobre a empresa com o conteúdo de todas as páginas. Os botões de leitura usam a voz do navegador. **Parar áudio** interrompe a fala do navegador ou do assistente.
+- O foco segue para o título da nova página e volta ao controle de origem ao fechar menu ou diálogo. Preferências incluem tema, contraste, tamanho de texto e velocidade da leitura.
+- O laboratório mantém os lançamentos fictícios em memória e anuncia o saldo após cada alteração.
 
 ## Desenvolvimento
 
@@ -51,7 +51,6 @@ Tokens efêmeros são distribuídos somente depois da validação do Worker (ori
 
 ## Limitações conhecidas / próximos testes
 
-- O navegador pode bloquear autoplay até a primeira interação; o botão de boas-vindas é a alternativa.
 - Precisamos validar leitores de tela (NVDA, TalkBack e VoiceOver), Safari iOS, permissões de microfone, fluxos de interrupção e reconexão WebSocket reais em dispositivos. A integração foi construída a partir da documentação oficial; compilação não comprova uma sessão Live real.
 - Sessões Live são temporárias; o visitante deve reconectar quando a autenticação expirar.
 - Não divulgar conformidade WCAG AA/AAA sem auditoria.
@@ -61,7 +60,6 @@ Referências:
 - https://ai.google.dev/gemini-api/docs/live-api
 - https://ai.google.dev/gemini-api/docs/live-api/ephemeral-tokens
 - https://ai.google.dev/gemini-api/docs/models/gemini-3.8-live
-- https://ai.google.dev/gemini-api/docs/models/gemini-3.8-live-extended-thinking
 
 ## Design e acessibilidade como requisitos
 

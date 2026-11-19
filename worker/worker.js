@@ -5,7 +5,7 @@
  * RATE_LIMIT é um binding Cloudflare Rate Limiting, obrigatório (fail closed).
  * Restrinja publicamente também por WAF/Turnstile e por cotas do projeto Google.
  */
-const MODELS = new Set(['gemini-3.8-live', 'gemini-3.8-live-extended-thinking']);
+const MODELS = new Set(['gemini-3.8-live', 'gemini-3.8-live-extended-thinking', 'gemini-3.1-flash-live-preview']);
 
 /**
  * Surface the *actual* validation reason safely. The previous 400 handler

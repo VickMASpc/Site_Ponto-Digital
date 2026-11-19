@@ -1,8 +1,10 @@
 import { GoogleGenAI, Modality } from '@google/genai';
-import { NAV } from './data.js';
+import { NAV, CONTENT } from './data.js';
 
 export const LIVE_FAST = 'gemini-3.8-live';
 export const LIVE_EXTENDED = 'gemini-3.8-live-extended-thinking';
+export const LIVE_FLASH = 'gemini-3.1-flash-live-preview';
+const TURN_IDLE_TIMEOUT_MS = 15000;
 const pages = NAV.map(({id}) => id);
 const pageParameter = {type:'STRING',enum:pages};
 
@@ -38,7 +40,8 @@ Diferencie a atividade principal da Ponto Digital (desenvolvimento B2B) de conce
 Dê descrições úteis de onde o usuário está após a navegação. Não invente preços, endereço exato, clientes, certificações WCAG ou impacto ecológico.
 O site funciona com teclas, leitura local e outras rotas mesmo sem você. Não instrua usuários a expor uma chave de API.
 Se o usuário pedir uma alteração que não há ferramenta para executar, explique a limitação em vez de afirmar sucesso.
-As mensagens de contexto que começam com [Ponto Digital] registram ações realizadas pela interface. Use-as apenas para acompanhar o estado da página.
+Para perguntas e comentários sobre conteúdo do site, fale diretamente com base no catálogo a seguir. Use uma ferramenta quando a ação realmente precisar do site ou faltar informação.
+${NAV.map(({id,label})=>label+': '+CONTENT[id].description+' '+CONTENT[id].sections.map(({title,body})=>title+' — '+body).join(' ')).join('\n')}
 Use as ferramentas para executar ações. Se levar o visitante até conteúdo útil, decida se também deve lê-lo. Quando for abrir e ler, chame navigate_to uma vez com readAloud true. Use section junto com readAloud para ler somente a seção indicada. Ao mostrar uma página a quem navega por voz, a leitura costuma ajudar. Respeite pedidos de silêncio com silent true e sem confirmação falada. Perguntas de informação podem ser respondidas sem trocar de página. Para ler a página atual, use read_page ou read_section.
 Faça a chamada antes de afirmar que executou uma ação. Quando a ferramenta confirmar a leitura local, deixe-a tocar. Quando o resultado de leitura (ou result.narration) contiver text para leitura por voz do Gemini, leia esse conteúdo na própria resposta à ferramenta, sem pedir outra ação do visitante. Quando o resultado informar cancelamento, interrompa a leitura.
 `;
@@ -69,9 +72,10 @@ function decodePCM(base64) {
 }
 
 export class LiveBridge {
-  constructor({onState,onText,onTurnEnd,onTool,onToolsComplete,onNarration,onError,allowAudio,onVoiceInput}) {
+  constructor({onState,onText,onTurnEnd,onTool,onToolsComplete,onNarration,onError,onStalled,onTextOnly,allowAudio,onVoiceInput}) {
     this.onState=onState; this.onText=onText; this.onTurnEnd=onTurnEnd; this.onTool=onTool; this.onError=onError;
     this.onToolsComplete=onToolsComplete;this.onNarration=onNarration;
+    this.onStalled=onStalled;this.onTextOnly=onTextOnly;
     this.allowAudio=allowAudio; this.onVoiceInput=onVoiceInput;
     this.session=null; this.connected=false; this.recording=false;
     this.inputStream=null; this.inputContext=null; this.worklet=null; this.source=null;
@@ -81,6 +85,7 @@ export class LiveBridge {
     this.nextOutputSegment=false;
     this.narration=null;this.narrationTimer=null;this.narrationIdle=false;this.silenceOutput=false;
     this.toolQueue=Promise.resolve();this.cancelledTools=new Set();
+    this.turn=null;this.turnTimer=null;
   }
   async connect(model,level) {
     if(this.connected) return true;
@@ -162,7 +167,7 @@ export class LiveBridge {
   initOutput() {
     if(typeof AudioContext!=='function')return;
     if (!this.outputContext) this.outputContext=new AudioContext();
-    if(this.outputContext.state==='suspended') this.outputContext.resume().catch(()=>{});
+    if(this.outputContext.state!=='running' && this.outputContext.state!=='closed')this.outputContext.resume().catch(()=>{});
   }
   playAudio(base64,mime='') {
     if (!base64 || !this.outputContext || this.silenceOutput) return;
@@ -181,15 +186,43 @@ export class LiveBridge {
       this.scheduled.delete(source);
       if(this.narration==='playing' && this.narrationIdle && !this.scheduled.size)this.setNarration(null);
     };
+    return this.outputContext.state==='running';
   }
   stopPlayback() {
     for(const source of this.scheduled){try{source.stop()}catch{}}
     this.scheduled.clear();this.nextPlayTime=0;
   }
+  beginTurn(text='', typed=false, interrupting=false) {
+    this.turn={text,typed,interrupting,hasTool:false,hasAudio:false,transcript:''};
+    this.watchTurn();
+  }
+  watchTurn() {
+    clearTimeout(this.turnTimer);
+    const turn=this.turn;
+    if(!turn)return;
+    this.turnTimer=setTimeout(()=>{
+      const model=this.model;
+      this.disconnect();
+      this.onStalled?.({model,retryText:turn.hasTool?'':turn.text.trim()});
+    },TURN_IDLE_TIMEOUT_MS);
+  }
+  endTurn() {
+    clearTimeout(this.turnTimer);
+    const turn=this.turn;
+    this.turn=null;
+    if(turn?.transcript.trim() && !turn.hasAudio && !turn.hasTool && !this.silenceOutput){
+      this.stopPlayback();
+      this.onTextOnly?.(turn.transcript.trim());
+    }
+  }
   async processMessage(msg) {
     const session=this.session;
     const content=msg.serverContent;
     if(content?.interrupted) {
+      if(this.turn && !this.turn.typed){
+        clearTimeout(this.turnTimer);
+        this.turn=null;
+      }
       this.stopPlayback();
       this.onTurnEnd?.();
       this.onVoiceInput?.();
@@ -197,33 +230,52 @@ export class LiveBridge {
     const input=content?.inputTranscription;
     if(input?.text) {
       this.silenceOutput=false;
+      if(!this.turn || this.turn.typed || this.turn.transcript || this.turn.hasTool)this.beginTurn();
+      this.turn.text+=input.text;
+      this.watchTurn();
       this.onText('Você',input.text,{stream:true});
     }
     const status=content?.interactionStatus ?? msg.interactionStatus;
-    if(status==='IN_PROGRESS' && !this.recording) this.onState('busy');
+    if(status==='IN_PROGRESS'){
+      if(!this.turn)this.beginTurn();
+      if(!this.recording)this.onState('busy');
+    }
     if(content?.outputTranscription?.text){
-      this.onText('Ponto',content.outputTranscription.text,{stream:true,newSegment:this.nextOutputSegment});
+      const text=content.outputTranscription.text;
+      if(this.turn){
+        const separator=this.nextOutputSegment && /\S$/.test(this.turn.transcript) && /^\S/.test(text)?' ':'';
+        this.turn.transcript+=separator+text;
+        this.watchTurn();
+      }
+      this.onText('Ponto',text,{stream:true,newSegment:this.nextOutputSegment});
       this.nextOutputSegment=false;
     }
     if(content?.generationComplete || content?.turnComplete)this.nextOutputSegment=true;
     if(input?.finished)this.onTurnEnd?.('Você');
     // Extended can send several generation/turn completions while still processing one request.
-    const idle=status==='IDLE' || (content?.turnComplete && !status && this.model===LIVE_FAST);
-    if(idle){
+    const idle=status==='IDLE' || (content?.turnComplete && !status && this.model!==LIVE_EXTENDED);
+    for(const part of content?.modelTurn?.parts ?? []) {
+      if(part.inlineData?.data && part.inlineData.mimeType?.startsWith('audio/')){
+        if(this.turn)this.watchTurn();
+        if(this.allowAudio?.()!==false && this.playAudio(part.inlineData.data,part.inlineData.mimeType) && this.turn)this.turn.hasAudio=true;
+      }
+    }
+    const calls=msg.toolCall?.functionCalls;
+    if(calls?.length && this.turn){
+      this.turn.hasTool=true;
+      this.watchTurn();
+    }
+    const previousTurnEnded=this.turn?.interrupting && !this.turn.transcript && !this.turn.hasAudio && !this.turn.hasTool;
+    if(idle && !previousTurnEnded){
       this.onTurnEnd?.();
       this.onState(this.recording?'listening':'ready');
-    }
-    for(const part of content?.modelTurn?.parts ?? []) {
-      if(part.inlineData?.data && part.inlineData.mimeType?.startsWith('audio/') && this.allowAudio?.()!==false) {
-        this.playAudio(part.inlineData.data,part.inlineData.mimeType);
-      }
+      this.endTurn();
     }
     if(idle && this.narration==='playing'){
       this.narrationIdle=true;
       if(!this.scheduled.size)this.setNarration(null);
     }
     for(const id of msg.toolCallCancellation?.ids??[])this.cancelledTools.add(id);
-    const calls=msg.toolCall?.functionCalls;
     if(calls?.length){
       const work=this.toolQueue.then(()=>this.executeTools(session,calls));
       this.toolQueue=work.catch(()=>{});
@@ -290,12 +342,18 @@ export class LiveBridge {
       this.onState('ready');
     }
   }
-  sendText(text) {
+  sendText(text,{display=true}={}) {
     if(!this.connected||!this.session) throw new Error('Conecte o assistente primeiro.');
+    const interrupting=this.model===LIVE_EXTENDED && Boolean(this.turn);
     this.onTurnEnd?.();
-    this.onText('Você',text);
+    if(display)this.onText('Você',text);
     this.silenceOutput=false;
-    this.session.sendRealtimeInput({text});
+    if(interrupting)this.stopPlayback();
+    this.beginTurn(text,true,interrupting);
+    this.onState('busy');
+    if(interrupting){
+      this.session.sendClientContent({turns:[{role:'user',parts:[{text}]}],turnComplete:true});
+    } else this.session.sendRealtimeInput({text});
   }
   mutePlayback() {
     this.silenceOutput=true;
@@ -324,6 +382,7 @@ export class LiveBridge {
   }
   disconnect() {
     this.sessionId++;
+    clearTimeout(this.turnTimer);this.turn=null;
     this.onTurnEnd?.();
     this.opening?.controller.abort();this.opening=null;
     this.stopMicrophone();this.cancelNarration();this.stopPlayback();

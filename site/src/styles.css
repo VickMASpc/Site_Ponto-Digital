@@ -157,3 +157,17 @@ body:has(.activity-panel:not([hidden])) .voice-shell{position:static;margin:12px
 [data-theme=contrast] .chat-form button{color:#000}
 [data-theme=contrast] .message{background:#000;color:#fff;border:1px solid #fff}
 [data-theme=contrast] .message span{color:#ffff00}
+.skip-link{max-width:calc(100% - 32px)}
+.page-hero-left,.info-card,.lab-form,.balance-card{min-width:0}
+.page-hero-left,.info-card,.message,.transactions,.activity-head h2{overflow-wrap:anywhere}
+.info-grid,.lab-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+@media(max-width:900px){
+ .header-inner .brand{flex-shrink:1;min-width:0;overflow-wrap:anywhere}
+ .header-actions{flex-shrink:0}
+}
+@media(max-width:600px){
+ .info-grid,.lab-grid{grid-template-columns:minmax(0,1fr)}
+}
+@media(max-width:360px){
+ .footer-top{grid-template-columns:minmax(0,1fr)}
+}
